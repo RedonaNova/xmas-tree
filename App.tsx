@@ -1,93 +1,90 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import Scene from './components/Scene';
-import Overlay from './components/Overlay';
-import HandController from './components/HandController';
-import { generatePhotoPositions } from './utils/math';
-import { ControlMode, PhotoData, InteractionMode } from './types';
-import { DEFAULT_PHOTOS_COUNT, PLACEHOLDER_TYPES } from './constants';
-import { useAudio } from './hooks/useAudio';
-import { useRecording } from './hooks/useRecording';
-import { useTreeInteraction } from './hooks/useTreeInteraction';
-import { processImageWithPadding } from './utils/image';
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import Scene from "./components/Scene";
+import Overlay from "./components/Overlay";
+import HandController from "./components/HandController";
+import { generateTreeLayout } from "./utils/math";
+import { ControlMode, PhotoData, InteractionMode, ZoomLevel } from "./types";
+import { DEFAULT_PHOTOS_COUNT, PLACEHOLDER_TYPES } from "./constants";
+import { useAudio } from "./hooks/useAudio";
+import { useRecording } from "./hooks/useRecording";
+import { useTreeInteraction } from "./hooks/useTreeInteraction";
+import { processImageWithPadding } from "./utils/image";
 import {
-  fetchTree, createTree, updateTree, uploadPhoto, imageUrl,
-  getEditToken, setEditToken, consumeEditLinkToken, SavedTree, TreeSlot
-} from './utils/api';
-import ShareModal, { SaveResult } from './components/ShareModal';
-import { AlertCircle, CheckCircle2, Loader2, X } from 'lucide-react';
+  fetchTree,
+  createTree,
+  updateTree,
+  uploadPhoto,
+  imageUrl,
+  getEditToken,
+  setEditToken,
+  consumeEditLinkToken,
+  SavedTree,
+  TreeSlot,
+} from "./utils/api";
+import ShareModal, { SaveResult } from "./components/ShareModal";
+import { AlertCircle, CheckCircle2, Loader2, X } from "lucide-react";
 
 // "/" -> empty tree, visitors decorate it themselves (Edit mode).
 // "/<slug>" -> saved tree from the server, opened in View mode.
 const getSlugFromPath = (): string => {
-  const segment = window.location.pathname.split('/').filter(Boolean)[0] || '';
-  return /^[a-z0-9-]{1,40}$/.test(segment) ? segment : '';
+  const segment = window.location.pathname.split("/").filter(Boolean)[0] || "";
+  return /^[a-z0-9-]{1,40}$/.test(segment) ? segment : "";
 };
 const INITIAL_SLUG = getSlugFromPath();
 consumeEditLinkToken(INITIAL_SLUG);
 
-const slotIndex = (photo: PhotoData) => Number(photo.id.replace('photo-', ''));
+// The tree shows exactly as many frames as there are photos (up to MAX_PHOTOS),
+// spread evenly along the spiral. An empty tree shows a few placeholder frames.
+const MAX_PHOTOS = DEFAULT_PHOTOS_COUNT;
+const EMPTY_PLACEHOLDERS = 12;
 
-const createPlaceholderPhotos = (): PhotoData[] => {
+let nextPhotoId = 0;
+const newPhotoId = () => `photo-${Date.now().toString(36)}-${nextPhotoId++}`;
+
+/** Places items on the tree from top to bottom, evenly spaced. */
+const layoutOnTree = (items: { id: string; url: string }[]): PhotoData[] => {
   const types = Object.values(PLACEHOLDER_TYPES);
-  return generatePhotoPositions(DEFAULT_PHOTOS_COUNT).map((pos, index) => ({
-    id: `photo-${index}`,
-    url: '', // Empty means use placeholder
-    placeholderType: types[index % types.length],
-    position: pos.position,
-    rotation: pos.rotation
+  // Already in display order: the first photos get the front of the tree
+  const positions = generateTreeLayout(items.length);
+  return items.map((item, k) => ({
+    id: item.id,
+    url: item.url,
+    placeholderType: types[k % types.length],
+    position: positions[k].position,
+    rotation: positions[k].rotation,
   }));
 };
 
-/**
- * Puts new image URLs into FREE slots only (placeholders, then spots where a photo was
- * deleted), from the top of the tree down. Existing photos are never overwritten.
- */
-const fillFreeSlots = (current: PhotoData[], urls: string[]) => {
-  const bySlot = new Map(current.map(p => [slotIndex(p), p]));
-  const all = createPlaceholderPhotos();
-  const free = all
-    .filter(p => !bySlot.get(slotIndex(p))?.url)
-    .sort((a, b) => b.position[1] - a.position[1]);
+const createPlaceholderPhotos = (): PhotoData[] =>
+  layoutOnTree(
+    Array.from({ length: EMPTY_PLACEHOLDERS }, () => ({ id: newPhotoId(), url: "" })),
+  );
 
-  const added = new Map<number, string>();
-  urls.slice(0, free.length).forEach((url, k) => added.set(slotIndex(free[k]), url));
+/** Real photos in tree order (top first), placeholders dropped. */
+const realPhotos = (photos: PhotoData[]) => photos.filter((p) => p.url);
 
-  let last: PhotoData | null = null;
-  const next: PhotoData[] = [];
-  for (const slot of all) {
-    const i = slotIndex(slot);
-    const existing = bySlot.get(i);
-    const url = added.get(i);
-    if (url) {
-      const photo = { ...(existing || slot), url };
-      next.push(photo);
-      last = photo;
-    } else if (existing) {
-      next.push(existing);
-    }
-    // deleted slot that got nothing stays deleted
-  }
-  return { next, last: last as PhotoData | null, skipped: Math.max(0, urls.length - free.length) };
-};
+/** Lays out the given photos, or shows placeholders when there are none. */
+const arrangePhotos = (items: { id: string; url: string }[]): PhotoData[] =>
+  items.length ? layoutOnTree(items) : createPlaceholderPhotos();
 
-/** Rebuilds the tree's photos from a saved tree (deleted slots stay deleted). */
-const photosFromSavedTree = (tree: SavedTree): PhotoData[] => {
-  const bySlot = new Map(tree.slots.map(s => [s.i, s.img]));
-  return createPlaceholderPhotos()
-    .filter(p => bySlot.has(slotIndex(p)))
-    .map(p => {
-      const img = bySlot.get(slotIndex(p));
-      return img ? { ...p, url: imageUrl(img) } : p;
-    });
-};
+/** Rebuilds the tree from a saved tree: its photos in saved order. */
+const photosFromSavedTree = (tree: SavedTree): PhotoData[] =>
+  arrangePhotos(
+    [...tree.slots]
+      .filter((s) => s.img)
+      .sort((a, b) => a.i - b.i)
+      .map((s) => ({ id: newPhotoId(), url: imageUrl(s.img!) })),
+  );
 
 const App: React.FC = () => {
-  const [controlMode, setControlMode] = useState<ControlMode>(ControlMode.MOUSE);
+  const [controlMode, setControlMode] = useState<ControlMode>(
+    ControlMode.MOUSE,
+  );
   const [interactionMode, setInteractionMode] = useState<InteractionMode>(
-    INITIAL_SLUG ? InteractionMode.VIEW : InteractionMode.EDIT
+    INITIAL_SLUG ? InteractionMode.VIEW : InteractionMode.EDIT,
   );
   const [photos, setPhotos] = useState<PhotoData[]>(createPlaceholderPhotos);
-  const [userName, setUserName] = useState('');
+  const [userName, setUserName] = useState("");
   const [isNameSet, setIsNameSet] = useState(false);
   const [isHandReady, setIsHandReady] = useState(false);
   const [isTreeLoading, setIsTreeLoading] = useState(!!INITIAL_SLUG);
@@ -96,19 +93,28 @@ const App: React.FC = () => {
   const [isShareOpen, setIsShareOpen] = useState(false);
   // Shared links open like a card: buttons hidden, only the eye button to bring them back
   const [showUI, setShowUI] = useState(!INITIAL_SLUG);
-  const [saveProgress, setSaveProgress] = useState('');
-  const [toast, setToast] = useState<{ message: string; type: 'error' | 'success' } | null>(null);
+  const [saveProgress, setSaveProgress] = useState("");
+  const [toast, setToast] = useState<{
+    message: string;
+    type: "error" | "success";
+  } | null>(null);
 
-  const showToast = useCallback((message: string, type: 'error' | 'success' = 'error') => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 5000);
-  }, []);
+  const showToast = useCallback(
+    (message: string, type: "error" | "success" = "error") => {
+      setToast({ message, type });
+      setTimeout(() => setToast(null), 5000);
+    },
+    [],
+  );
 
   const videoRef = useRef<HTMLVideoElement>(null);
 
   // Custom Hooks
   const { isMusicPlaying, toggleMusic, audioRef } = useAudio();
-  const { isRecording, recordingType, handleRecordVideo } = useRecording(photos, (msg) => showToast(msg, 'error'));
+  const { isRecording, recordingType, handleRecordVideo } = useRecording(
+    photos,
+    (msg) => showToast(msg, "error"),
+  );
 
   const {
     zoomLevel,
@@ -122,20 +128,20 @@ const App: React.FC = () => {
     handlePhotoClick,
     handleNextPhoto,
     handlePrevPhoto,
-    scrollToTop
+    scrollToTop,
   } = useTreeInteraction({
     photos,
     interactionMode,
-    isRecording
+    isRecording,
   });
 
-  // Load a saved tree (/khulan etc.)
+  // Load a saved tree (/chris etc.)
   useEffect(() => {
     if (!INITIAL_SLUG) return;
     let cancelled = false;
 
     fetchTree(INITIAL_SLUG)
-      .then(tree => {
+      .then((tree) => {
         if (cancelled) return;
         setPhotos(photosFromSavedTree(tree));
         setUserName(tree.name);
@@ -143,15 +149,18 @@ const App: React.FC = () => {
         setCurrentSlug(tree.slug);
         setEditTokenState(getEditToken(tree.slug));
       })
-      .catch(err => {
+      .catch((err) => {
         if (cancelled) return;
         console.error(err);
         setInteractionMode(InteractionMode.EDIT);
         setShowUI(true);
-        history.replaceState(null, '', '/');
-        showToast(err?.status === 404
-          ? `"${INITIAL_SLUG}" холбоостой мод олдсонгүй. Өөрийн модоо чимэглээд хуваалцаарай.`
-          : 'Модыг ачаалж чадсангүй. Интернэтээ шалгаад дахин оролдоно уу.', 'error');
+        history.replaceState(null, "", "/");
+        showToast(
+          err?.status === 404
+            ? `"${INITIAL_SLUG}" холбоостой мод олдсонгүй. Өөрийн модоо чимэглээд хуваалцаарай.`
+            : "Модыг ачаалж чадсангүй. Интернэтээ шалгаад дахин оролдоно уу.",
+          "error",
+        );
       })
       .finally(() => {
         if (!cancelled) setIsTreeLoading(false);
@@ -169,37 +178,44 @@ const App: React.FC = () => {
       consumeEditLinkToken(currentSlug);
       setEditTokenState(getEditToken(currentSlug));
     };
-    window.addEventListener('hashchange', onHashChange);
-    return () => window.removeEventListener('hashchange', onHashChange);
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
   }, [currentSlug]);
 
-  const handleSave = async ({ name, slug, mode }: { name: string; slug: string; mode: 'create' | 'update' }): Promise<SaveResult> => {
-    const withImages = photos.filter(p => p.url);
-    const slots: TreeSlot[] = [];
+  const handleSave = async ({
+    name,
+    slug,
+    mode,
+  }: {
+    name: string;
+    slug: string;
+    mode: "create" | "update";
+  }): Promise<SaveResult> => {
+    const withImages = realPhotos(photos);
+    const imgById = new Map<string, string>();
     let done = 0;
     setSaveProgress(`Зураг илгээж байна 0/${withImages.length}`);
 
     // Upload a few photos at a time
-    const queue = [...photos];
+    const queue = [...withImages];
     const worker = async () => {
       while (queue.length) {
         const photo = queue.shift()!;
-        if (!photo.url) {
-          slots.push({ i: slotIndex(photo), img: null });
-          continue;
-        }
-        const img = await uploadPhoto(photo.url);
-        slots.push({ i: slotIndex(photo), img });
+        imgById.set(photo.id, await uploadPhoto(photo.url));
         done++;
         setSaveProgress(`Зураг илгээж байна ${done}/${withImages.length}`);
       }
     };
     try {
       await Promise.all([worker(), worker(), worker()]);
-      setSaveProgress('Хадгалж байна...');
+      setSaveProgress("Хадгалж байна...");
+      const slots: TreeSlot[] = withImages.map((p, i) => ({
+        i,
+        img: imgById.get(p.id)!,
+      }));
 
       let result: SaveResult;
-      if (mode === 'update' && currentSlug && editToken) {
+      if (mode === "update" && currentSlug && editToken) {
         await updateTree(currentSlug, editToken, { name, slots });
         result = { slug: currentSlug, editToken };
       } else {
@@ -209,18 +225,20 @@ const App: React.FC = () => {
       }
 
       // Show stored images from now on, and put the link in the address bar
-      setPhotos(prev => prev.map(p => {
-        const slot = slots.find(s => s.i === slotIndex(p));
-        return slot?.img ? { ...p, url: imageUrl(slot.img) } : p;
-      }));
+      setPhotos((prev) =>
+        prev.map((p) => {
+          const img = imgById.get(p.id);
+          return img ? { ...p, url: imageUrl(img) } : p;
+        }),
+      );
       setCurrentSlug(result.slug);
       setEditTokenState(result.editToken);
       setUserName(name);
       setIsNameSet(true);
-      history.replaceState(null, '', `/${result.slug}`);
+      history.replaceState(null, "", `/${result.slug}`);
       return result;
     } finally {
-      setSaveProgress('');
+      setSaveProgress("");
     }
   };
 
@@ -229,7 +247,8 @@ const App: React.FC = () => {
     let currentStream: MediaStream | null = null;
 
     if (controlMode === ControlMode.HAND) {
-      navigator.mediaDevices.getUserMedia({ video: true })
+      navigator.mediaDevices
+        .getUserMedia({ video: true })
         .then((stream) => {
           currentStream = stream;
           if (videoRef.current) {
@@ -239,14 +258,17 @@ const App: React.FC = () => {
         })
         .catch((err) => {
           console.error("Camera denied:", err);
-          showToast("Гараар удирдахын тулд камер ашиглах зөвшөөрөл өгнө үү.", 'error');
+          showToast(
+            "Гараар удирдахын тулд камер ашиглах зөвшөөрөл өгнө үү.",
+            "error",
+          );
           setControlMode(ControlMode.MOUSE);
         });
     } else {
       // Stop stream if exists
       if (videoRef.current && videoRef.current.srcObject) {
         const stream = videoRef.current.srcObject as MediaStream;
-        stream.getTracks().forEach(t => t.stop());
+        stream.getTracks().forEach((t) => t.stop());
         videoRef.current.srcObject = null;
       }
       setIsHandReady(false);
@@ -254,13 +276,15 @@ const App: React.FC = () => {
 
     return () => {
       if (currentStream) {
-        currentStream.getTracks().forEach(t => t.stop());
+        currentStream.getTracks().forEach((t) => t.stop());
       }
     };
   }, [controlMode]);
 
   const isUiTarget = (target: EventTarget | null) =>
-    !!(target as HTMLElement | null)?.closest?.('button, input, a, [role="dialog"]');
+    !!(target as HTMLElement | null)?.closest?.(
+      'button, input, a, [role="dialog"]',
+    );
 
   const handleDoubleClick = (e: React.MouseEvent) => {
     // Prevent zooming out when interacting with UI
@@ -277,18 +301,22 @@ const App: React.FC = () => {
   const lastDoubleTap = useRef(0);
 
   const handlePointerDown = (e: React.PointerEvent) => {
-    if (e.pointerType !== 'touch') return;
+    if (e.pointerType !== "touch") return;
     tapStart.current = { t: Date.now(), x: e.clientX, y: e.clientY };
   };
 
   const handlePointerUp = (e: React.PointerEvent) => {
-    if (e.pointerType !== 'touch' || isUiTarget(e.target)) return;
+    if (e.pointerType !== "touch" || isUiTarget(e.target)) return;
     const now = Date.now();
     const s = tapStart.current;
-    const isTap = now - s.t < 300 && Math.hypot(e.clientX - s.x, e.clientY - s.y) < 10;
+    const isTap =
+      now - s.t < 300 && Math.hypot(e.clientX - s.x, e.clientY - s.y) < 10;
     if (!isTap) return;
     const prev = lastTap.current;
-    if (now - prev.t < 350 && Math.hypot(e.clientX - prev.x, e.clientY - prev.y) < 40) {
+    if (
+      now - prev.t < 350 &&
+      Math.hypot(e.clientX - prev.x, e.clientY - prev.y) < 40
+    ) {
       lastDoubleTap.current = now;
       lastTap.current = { t: 0, x: 0, y: 0 };
       scrollToTop();
@@ -306,10 +334,10 @@ const App: React.FC = () => {
       URL.revokeObjectURL(rawUrl);
     }
 
-    const photoToUpdate = photos.find(p => p.id === id);
+    const photoToUpdate = photos.find((p) => p.id === id);
     if (photoToUpdate) {
       const updatedPhoto = { ...photoToUpdate, url };
-      setPhotos(prev => prev.map(p => p.id === id ? updatedPhoto : p));
+      setPhotos((prev) => prev.map((p) => (p.id === id ? updatedPhoto : p)));
 
       // Switch to VIEW mode and focus
       setInteractionMode(InteractionMode.VIEW);
@@ -317,42 +345,82 @@ const App: React.FC = () => {
     }
   };
 
-  const handleBulkUpload = async (files: FileList) => {
-    const freeCount = DEFAULT_PHOTOS_COUNT - photos.filter(p => p.url).length;
-    const chosen = Array.from(files);
-    if (freeCount <= 0) {
-      showToast(`Модон дээр ${DEFAULT_PHOTOS_COUNT} зураг дүүрсэн байна. Зураг солих бол "Засах" горимд зураг дээр дарна уу.`, 'error');
+  const handleBulkUpload = async (files: FileList | File[]) => {
+    const current = realPhotos(photos);
+    const room = MAX_PHOTOS - current.length;
+    const chosen = Array.from(files).filter((f) => f.type.startsWith("image/") || !f.type);
+    if (!chosen.length) return;
+    if (room <= 0) {
+      showToast(
+        `Модон дээр ${MAX_PHOTOS} зураг дүүрсэн байна. Зураг солих бол "Засах" горимд зураг дээр дарна уу.`,
+        "error",
+      );
       return;
     }
 
-    const urls: string[] = [];
-    for (const file of chosen.slice(0, freeCount)) {
+    const added: { id: string; url: string }[] = [];
+    for (const file of chosen.slice(0, room)) {
       const rawUrl = URL.createObjectURL(file);
       const url = await processImageWithPadding(rawUrl);
       if (url !== rawUrl) {
         URL.revokeObjectURL(rawUrl);
       }
-      urls.push(url);
+      added.push({ id: newPhotoId(), url });
     }
 
-    const { next, last } = fillFreeSlots(photos, urls);
-    setPhotos(next);
-    if (chosen.length > freeCount) {
-      showToast(`Сул байр ${freeCount} байсан тул эхний ${freeCount} зургийг нэмлээ.`, 'error');
-    }
+    // New photos go below the existing ones; the whole tree is re-spread evenly
+    setPhotos(arrangePhotos([...current, ...added]));
+    setFocusedPhoto(null);
+    setZoomLevel(ZoomLevel.FULL_TREE);
+    setInteractionMode(InteractionMode.VIEW);
 
-    if (last) {
-      // Switch to VIEW mode and focus
-      setInteractionMode(InteractionMode.VIEW);
-      handlePhotoClick(last);
+    const total = current.length + added.length;
+    if (chosen.length > room) {
+      showToast(
+        `Хамгийн ихдээ ${MAX_PHOTOS} зураг. Эхний ${added.length}-ийг нэмлээ (${total}/${MAX_PHOTOS}).`,
+        "error",
+      );
+    } else {
+      showToast(`${added.length} зураг нэмэгдлээ (${total}/${MAX_PHOTOS}).`, "success");
     }
   };
 
   const handleDeletePhoto = (id: string) => {
-    setPhotos(prev => prev.filter(p => p.id !== id));
+    setPhotos((prev) => arrangePhotos(realPhotos(prev).filter((p) => p.id !== id)));
     if (focusedPhoto?.id === id) {
       setFocusedPhoto(null);
+      setZoomLevel(ZoomLevel.FULL_TREE);
     }
+  };
+
+  const photoCount = realPhotos(photos).length;
+
+  // Desktop: drag photos from a folder onto the page
+  const [isDragging, setIsDragging] = useState(false);
+  const dragDepth = useRef(0);
+  const hasFiles = (e: React.DragEvent) => Array.from(e.dataTransfer?.types || []).includes("Files");
+  const dropHandlers = {
+    onDragEnter: (e: React.DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      dragDepth.current++;
+      setIsDragging(true);
+    },
+    onDragOver: (e: React.DragEvent) => {
+      if (hasFiles(e)) e.preventDefault();
+    },
+    onDragLeave: (e: React.DragEvent) => {
+      if (!hasFiles(e)) return;
+      dragDepth.current = Math.max(0, dragDepth.current - 1);
+      if (dragDepth.current === 0) setIsDragging(false);
+    },
+    onDrop: (e: React.DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      dragDepth.current = 0;
+      setIsDragging(false);
+      handleBulkUpload(Array.from(e.dataTransfer.files));
+    },
   };
 
   return (
@@ -361,6 +429,7 @@ const App: React.FC = () => {
       onDoubleClick={handleDoubleClick}
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
+      {...dropHandlers}
     >
       <audio
         ref={audioRef}
@@ -372,6 +441,7 @@ const App: React.FC = () => {
       <Scene
         photos={photos}
         onUpload={handleSingleUpload}
+        onAddPhotos={handleBulkUpload}
         onPhotoClick={handlePhotoClick}
         onDelete={handleDeletePhoto}
         controlMode={controlMode}
@@ -392,6 +462,8 @@ const App: React.FC = () => {
         interactionMode={interactionMode}
         setInteractionMode={setInteractionMode}
         onBulkUpload={handleBulkUpload}
+        photoCount={photoCount}
+        maxPhotos={MAX_PHOTOS}
         onNext={handleNextPhoto}
         onPrev={handlePrevPhoto}
         zoomLevel={zoomLevel}
@@ -425,10 +497,21 @@ const App: React.FC = () => {
         initialName={userName}
         currentSlug={currentSlug}
         canUpdate={!!editToken}
-        photoCount={photos.filter(p => p.url).length}
+        photoCount={photoCount}
         progress={saveProgress}
         onSave={handleSave}
       />
+
+      {isDragging && (
+        <div className="fixed inset-4 z-[95] pointer-events-none flex items-center justify-center rounded-3xl border-2 border-dashed border-[#1cbd62]/80 bg-black/50 backdrop-blur-sm">
+          <div className="text-center text-white">
+            <div className="text-2xl font-semibold">Зургаа энд тавина уу</div>
+            <div className="text-sm text-white/60 mt-1">
+              {photoCount}/{MAX_PHOTOS} зураг · дахиад {Math.max(0, MAX_PHOTOS - photoCount)} нэмж болно
+            </div>
+          </div>
+        </div>
+      )}
 
       {isTreeLoading && (
         <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[60] pointer-events-none">
@@ -441,18 +524,24 @@ const App: React.FC = () => {
 
       {toast && (
         <div className="fixed bottom-6 right-6 z-[100] animate-in slide-in-from-right-8 fade-in duration-300">
-          <div className={`min-w-[300px] max-w-md p-4 rounded-2xl shadow-2xl backdrop-blur-xl border ${
-            toast.type === 'error'
-              ? 'bg-red-950/40 border-red-500/30 text-red-100'
-              : 'bg-green-950/40 border-green-500/30 text-green-100'
-          } flex items-start gap-4 relative overflow-hidden group`}>
+          <div
+            className={`min-w-[300px] max-w-md p-4 rounded-2xl shadow-2xl backdrop-blur-xl border ${
+              toast.type === "error"
+                ? "bg-red-950/40 border-red-500/30 text-red-100"
+                : "bg-green-950/40 border-green-500/30 text-green-100"
+            } flex items-start gap-4 relative overflow-hidden group`}
+          >
             {/* Progress bar background */}
             <div className="absolute bottom-0 left-0 h-1 bg-white/10 w-full" />
             {/* Animated progress bar */}
-            <div className={`absolute bottom-0 left-0 h-1 ${toast.type === 'error' ? 'bg-red-500' : 'bg-green-500'} animate-[shrink_5s_linear_forwards]`} />
+            <div
+              className={`absolute bottom-0 left-0 h-1 ${toast.type === "error" ? "bg-red-500" : "bg-green-500"} animate-[shrink_5s_linear_forwards]`}
+            />
 
-            <div className={`p-2 rounded-xl ${toast.type === 'error' ? 'bg-red-500/20' : 'bg-green-500/20'}`}>
-              {toast.type === 'error' ? (
+            <div
+              className={`p-2 rounded-xl ${toast.type === "error" ? "bg-red-500/20" : "bg-green-500/20"}`}
+            >
+              {toast.type === "error" ? (
                 <AlertCircle className="w-5 h-5 text-red-400" />
               ) : (
                 <CheckCircle2 className="w-5 h-5 text-green-400" />
@@ -461,7 +550,7 @@ const App: React.FC = () => {
 
             <div className="flex-1 pt-0.5">
               <h4 className="text-sm font-bold tracking-tight mb-1">
-                {toast.type === 'error' ? 'Алдаа гарлаа' : 'Амжилттай!'}
+                {toast.type === "error" ? "Алдаа гарлаа" : "Амжилттай!"}
               </h4>
               <p className="text-xs text-white/70 leading-relaxed font-medium">
                 {toast.message}

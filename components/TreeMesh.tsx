@@ -60,6 +60,8 @@ interface TreeMeshProps {
 }
 
 const TreeMesh: React.FC<TreeMeshProps> = ({ isExploded = false, photos = [] }) => {
+  // Rebuild only when frame positions change, not when a picture changes
+  const layoutKey = photos.map(p => p.position.map(n => n.toFixed(3)).join(',')).join('|');
   const innerMeshRef = useRef<THREE.InstancedMesh>(null);
   const outerMeshRef = useRef<THREE.InstancedMesh>(null);
   const explodeProgress = useRef(0);
@@ -217,7 +219,8 @@ const TreeMesh: React.FC<TreeMeshProps> = ({ isExploded = false, photos = [] }) 
       }
     }
     return { innerParticles: inner, outerParticles: outer };
-  }, [photos]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layoutKey]);
 
   useFrame((state, delta) => {
     const updateMesh = (mesh: THREE.InstancedMesh | null, particles: any[]) => {

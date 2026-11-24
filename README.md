@@ -6,17 +6,20 @@ Based on [gracetyy/christmas-tree](https://github.com/gracetyy/christmas-tree) (
 
 ## How it works
 
-| URL | What it does |
-| --- | --- |
-| `/` | Empty tree. Visitors add their own photos (opens in **Засах** / Edit mode). |
-| `/<link>` e.g. `/khulan` | A saved tree, opens in **Харах** / View mode. |
+| URL                     | What it does                                                                |
+| ----------------------- | --------------------------------------------------------------------------- |
+| `/`                     | Empty tree. Visitors add their own photos (opens in **Засах** / Edit mode). |
+| `/<link>` e.g. `/chris` | A saved tree, opens in **Харах** / View mode.                               |
 
 - **Хуваалцах** (Share) saves the tree: photos are uploaded, a link is created from the name
-  (Mongolian is transliterated: Хулан → `/khulan`, Өлзий → `/ulzii`). The link can be edited;
-  if it is taken, a free one is suggested (`/khulan-3f2a`).
+  (Mongolian is transliterated: Хрис → `/chris`, Өлзий → `/ulzii`). The link can be edited;
+  if it is taken, a free one is suggested (`/chris-3f2a`).
 - The person who saved a tree can update it later from the same browser, or from anywhere with
-  the private **edit link** (`/khulan#edit=...`) shown after saving. Everyone else who changes a
+  the private **edit link** (`/chris#edit=...`) shown after saving. Everyone else who changes a
   saved tree can only save it as a new link.
+- The tree shows exactly as many frames as photos (1–30). The first 16 go on the front of the
+  tree in upload order; more go around the back. An empty tree shows 12 placeholder frames —
+  tapping one opens a multi-photo picker. Desktop: photos can also be dragged onto the page.
 - Touch screens: 1 finger rotates, pinch zooms, 2 fingers move, double tap resets the view.
 
 ## Storage

@@ -20,30 +20,149 @@ export const getSpiralPoint = (t: number) => {
   return new Vector3(x, y, z);
 };
 
-/**
- * Generates positions for photos along the spiral.
- */
-export const generatePhotoPositions = (count: number) => {
-  const positions: { position: [number, number, number], rotation: [number, number, number], t: number }[] = [];
-  
-  // Start from 10% up to 90% up
-  const startT = 0.08;
-  const endT = 0.92;
-  
-  for (let i = 0; i < count; i++) {
-    const t = startT + (i / (count - 1)) * (endT - startT);
-    const pos = getSpiralPoint(t);
-    
-    // Calculate rotation to face outwards/tangential
-    const angle = Math.atan2(pos.x, pos.z); 
-    
-    positions.push({
-      position: [pos.x, pos.y, pos.z],
-      rotation: [0, angle, 0], 
-      t
-    });
+type TreeSpot = { position: [number, number, number]; rotation: [number, number, number]; t: number };
+type Sample = { t: number; x: number; y: number; z: number; len: number };
+
+// Photos spaced at least this far apart (world units) along the spiral
+const MIN_PHOTO_SPACING = 1.7;
+// "Front" = within ±60° of the camera's initial direction (+z)
+const FRONT_COS = 0.5;
+
+let spiralSegments: { front: Sample[][]; back: Sample[][] } | null = null;
+
+/** Samples the spiral once and splits it into front arcs (one per loop) and the back path. */
+const getSpiralSegments = () => {
+  if (spiralSegments) return spiralSegments;
+  const front: Sample[][] = [];
+  const back: Sample[][] = [];
+  let current: Sample[] | null = null;
+  let currentBack: Sample[] | null = null;
+  let prev: { x: number; y: number; z: number } | null = null;
+  const STEPS = 4000;
+  for (let i = 0; i <= STEPS; i++) {
+    const t = 0.08 + (0.84 * i) / STEPS;
+    const p = getSpiralPoint(t);
+    const r = Math.hypot(p.x, p.z);
+    const step = prev ? Math.hypot(p.x - prev.x, p.y - prev.y, p.z - prev.z) : 0;
+    prev = { x: p.x, y: p.y, z: p.z };
+    if (p.z / r >= FRONT_COS) {
+      currentBack = null;
+      if (!current) {
+        current = [];
+        front.push(current);
+      }
+      const last = current[current.length - 1];
+      current.push({ t, x: p.x, y: p.y, z: p.z, len: last ? last.len + step : 0 });
+    } else {
+      current = null;
+      if (!currentBack) {
+        currentBack = [];
+        back.push(currentBack);
+      }
+      const last = currentBack[currentBack.length - 1];
+      currentBack.push({ t, x: p.x, y: p.y, z: p.z, len: last ? last.len + step : 0 });
+    }
   }
-  return positions;
+  spiralSegments = { front: front.filter(a => a.length > 1), back: back.filter(a => a.length > 1) };
+  return spiralSegments;
+};
+
+const pathLength = (path: Sample[]) => path[path.length - 1].len;
+
+/** Places m points evenly along a sampled path (half a gap at each end). */
+const placeAlong = (path: Sample[], m: number): Sample[] => {
+  const total = pathLength(path);
+  const out: Sample[] = [];
+  let j = 0;
+  for (let k = 0; k < m; k++) {
+    const target = ((k + 0.5) / m) * total;
+    while (j < path.length - 1 && path[j].len < target) j++;
+    out.push(path[j]);
+  }
+  return out;
+};
+
+const toSpot = (s: Sample): TreeSpot => ({
+  position: [s.x, s.y, s.z],
+  rotation: [0, Math.atan2(s.x, s.z), 0],
+  t: s.t,
+});
+
+/**
+ * Positions for `count` photos, designed to look good from the default camera:
+ * up to ~16 photos all go on the front of the tree (spread across the loops, more on the
+ * wider lower loops); any extra photos are spread evenly around the back.
+ * Returned in display order: front spots top to bottom, then back spots top to bottom.
+ */
+export const generateTreeLayout = (count: number): TreeSpot[] => {
+  if (count <= 0) return [];
+  const { front, back } = getSpiralSegments();
+  const lengths = front.map(pathLength);
+  const caps = lengths.map(len => Math.max(1, Math.floor(len / MIN_PHOTO_SPACING)));
+  const frontCapacity = caps.reduce((a, b) => a + b, 0);
+  const frontCount = Math.min(count, frontCapacity);
+
+  // How many photos per front arc
+  const perArc = front.map(() => 0);
+  if (frontCount < front.length) {
+    // Fewer photos than loops: use loops spread from bottom to top
+    for (let k = 0; k < frontCount; k++) {
+      const idx = Math.min(front.length - 1, Math.round(((k + 0.5) * front.length) / frontCount - 0.5));
+      perArc[idx]++;
+    }
+  } else {
+    // Proportional to arc length (largest remainder), respecting each arc's capacity
+    const totalLen = lengths.reduce((a, b) => a + b, 0);
+    const exact = lengths.map(len => (frontCount * len) / totalLen);
+    exact.forEach((e, i) => (perArc[i] = Math.min(caps[i], Math.max(1, Math.floor(e)))));
+    let left = frontCount - perArc.reduce((a, b) => a + b, 0);
+    const order = exact.map((e, i) => ({ i, rem: e - Math.floor(e) })).sort((a, b) => b.rem - a.rem);
+    while (left > 0) {
+      let placed = false;
+      for (const { i } of order) {
+        if (left > 0 && perArc[i] < caps[i]) {
+          perArc[i]++;
+          left--;
+          placed = true;
+        }
+      }
+      if (!placed) break;
+    }
+    while (left < 0) {
+      // Too many after the "at least 1" rule: trim the fullest arcs
+      const i = perArc.indexOf(Math.max(...perArc));
+      perArc[i]--;
+      left++;
+    }
+  }
+
+  // Order: front spots first (top to bottom), then back spots - so the first photos face the camera
+  const byHeight = (a: TreeSpot, b: TreeSpot) => b.position[1] - a.position[1];
+  const spots: TreeSpot[] = [];
+  front.forEach((arc, i) => placeAlong(arc, perArc[i]).forEach(s => spots.push(toSpot(s))));
+  spots.sort(byHeight);
+  const backSpots: TreeSpot[] = [];
+  if (count > frontCount) {
+    // Extra photos around the back, per segment so they keep clear of the front ones
+    const extra = count - frontCount;
+    const backLens = back.map(pathLength);
+    const backTotal = backLens.reduce((a, b) => a + b, 0);
+    const exact = backLens.map(len => (extra * len) / backTotal);
+    const perBack = exact.map(Math.floor);
+    let left = extra - perBack.reduce((a, b) => a + b, 0);
+    exact
+      .map((e, i) => ({ i, rem: e - Math.floor(e) }))
+      .sort((a, b) => b.rem - a.rem)
+      .forEach(({ i }) => {
+        if (left > 0) {
+          perBack[i]++;
+          left--;
+        }
+      });
+    back.forEach((seg, i) => placeAlong(seg, perBack[i]).forEach(s => backSpots.push(toSpot(s))));
+  }
+  spots.push(...backSpots.sort(byHeight));
+  return spots;
 };
 
 const textureCache: Record<string, string> = {};

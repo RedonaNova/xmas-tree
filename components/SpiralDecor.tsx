@@ -30,6 +30,8 @@ interface SpiralDecorProps {
 }
 
 const SpiralDecor: React.FC<SpiralDecorProps> = ({ isExploded = false, photos = [] }) => {
+  // Rebuild only when frame positions change, not when a picture changes
+  const layoutKey = photos.map(p => p.position.map(n => n.toFixed(3)).join(',')).join('|');
   const lineRef = useRef<THREE.Mesh>(null);
   const pointsRef = useRef<THREE.Points>(null);
   const baubleMeshRef = useRef<THREE.InstancedMesh>(null);
@@ -187,7 +189,8 @@ const SpiralDecor: React.FC<SpiralDecorProps> = ({ isExploded = false, photos = 
       });
     }
     return items;
-  }, [photos]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layoutKey]);
 
   useFrame((state) => {
     const time = state.clock.elapsedTime;

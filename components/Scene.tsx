@@ -16,6 +16,7 @@ import { PhotoData, ControlMode, ZoomLevel, InteractionMode } from '../types';
 interface SceneProps {
   photos: PhotoData[];
   onUpload: (id: string, file: File) => void;
+  onAddPhotos: (files: File[]) => void;
   onPhotoClick: (data: PhotoData) => void;
   onDelete: (id: string) => void;
   controlMode: ControlMode;
@@ -391,6 +392,7 @@ const PostProcessingEffects: React.FC<{
 const Scene: React.FC<SceneProps> = ({
   photos,
   onUpload,
+  onAddPhotos,
   onPhotoClick,
   onDelete,
   controlMode,
@@ -471,6 +473,7 @@ const Scene: React.FC<SceneProps> = ({
             key={photo.id}
             data={photo}
             onUpload={onUpload}
+            onAddPhotos={onAddPhotos}
             onPhotoClick={onPhotoClick}
             onDelete={onDelete}
             isZoomedIn={zoomLevel === ZoomLevel.ZOOMED_IN}

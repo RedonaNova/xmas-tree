@@ -7,7 +7,9 @@ interface OverlayProps {
   setControlMode: (mode: ControlMode) => void;
   interactionMode: InteractionMode;
   setInteractionMode: (mode: InteractionMode) => void;
-  onBulkUpload: (files: FileList) => void;
+  onBulkUpload: (files: FileList | File[]) => void;
+  photoCount: number;
+  maxPhotos: number;
   onNext: () => void;
   onPrev: () => void;
   zoomLevel: ZoomLevel;
@@ -46,6 +48,8 @@ const Overlay: React.FC<OverlayProps> = ({
   interactionMode,
   setInteractionMode,
   onBulkUpload,
+  photoCount,
+  maxPhotos,
   onNext,
   onPrev,
   zoomLevel,
@@ -451,6 +455,12 @@ const Overlay: React.FC<OverlayProps> = ({
                   <span className="text-[11px] md:text-sm font-medium whitespace-nowrap text-white/90">
                     <span className="md:hidden">Нэмэх</span>
                     <span className="hidden md:inline">Зураг нэмэх</span>
+                  </span>
+                  <span
+                    className={`text-[10px] md:text-xs font-semibold tabular-nums px-1.5 py-0.5 rounded-full ${photoCount >= maxPhotos ? 'bg-[#ff421c]/25 text-[#ffb4a3]' : 'bg-white/10 text-white/70'}`}
+                    title={`${photoCount} / ${maxPhotos} зураг`}
+                  >
+                    {photoCount}/{maxPhotos}
                   </span>
                 </button>
 

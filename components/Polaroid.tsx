@@ -1,4 +1,4 @@
-import React, { useRef, useState, useMemo } from 'react';
+import React, { useRef, useState, useMemo, useLayoutEffect } from 'react';
 import * as THREE from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
 import { Html, useTexture } from '@react-three/drei';
@@ -10,6 +10,7 @@ import { generatePlaceholderTexture } from '../utils/math';
 interface PolaroidProps {
   data: PhotoData;
   onUpload: (id: string, file: File) => void;
+  onAddPhotos: (files: File[]) => void;
   onPhotoClick: (data: PhotoData) => void;
   onDelete: (id: string) => void;
   isZoomedIn: boolean;
@@ -19,10 +20,11 @@ interface PolaroidProps {
 }
 
 const tempScale = new THREE.Vector3();
+const tempTarget = new THREE.Vector3();
 
 // One shared, attached (but hidden) file input. iOS Safari is unreliable with detached inputs.
 let photoPicker: HTMLInputElement | null = null;
-const getPhotoPicker = () => {
+const getPhotoPicker = (multiple: boolean) => {
   if (!photoPicker) {
     photoPicker = document.createElement('input');
     photoPicker.type = 'file';
@@ -30,12 +32,14 @@ const getPhotoPicker = () => {
     photoPicker.style.display = 'none';
     document.body.appendChild(photoPicker);
   }
+  photoPicker.multiple = multiple;
   return photoPicker;
 };
 
 const Polaroid: React.FC<PolaroidProps> = ({ 
   data, 
   onUpload, 
+  onAddPhotos,
   onPhotoClick,
   onDelete,
   isZoomedIn, 
@@ -45,6 +49,18 @@ const Polaroid: React.FC<PolaroidProps> = ({
 }) => {
   const groupRef = useRef<THREE.Group>(null);
   const explodeProgress = useRef(0);
+  const anchor = useRef(new THREE.Vector3(...data.position));
+  const anchorRotY = useRef(data.rotation[1]);
+
+  // Initial transform only; afterwards useFrame drives it (new frames "pop in")
+  useLayoutEffect(() => {
+    const g = groupRef.current;
+    if (!g) return;
+    g.position.set(...data.position);
+    g.rotation.set(0, data.rotation[1], 0);
+    g.scale.setScalar(0.01);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [hovered, setHovered] = useState(false);
 
   const explodeDir = useMemo(() => {
@@ -68,13 +84,22 @@ const Polaroid: React.FC<PolaroidProps> = ({
 
     if (groupRef.current) {
       const time = state.clock.elapsedTime;
+
+      // Smoothly follow layout changes
+      anchor.current.lerp(tempTarget.set(...data.position), 0.08);
+      let rotDiff = data.rotation[1] - anchorRotY.current;
+      while (rotDiff > Math.PI) rotDiff -= Math.PI * 2;
+      while (rotDiff < -Math.PI) rotDiff += Math.PI * 2;
+      anchorRotY.current += rotDiff * 0.08;
+      const pos = anchor.current;
+      const rotY = anchorRotY.current;
       const swayAmount = 0.05;
       
       // Base position (on the tree or exploding away)
       const basePos = new THREE.Vector3(
-        data.position[0] + explodeDir.x * explodeProgress.current,
-        data.position[1] + explodeDir.y * explodeProgress.current,
-        data.position[2] + explodeDir.z * explodeProgress.current
+        pos.x + explodeDir.x * explodeProgress.current,
+        pos.y + explodeDir.y * explodeProgress.current,
+        pos.z + explodeDir.z * explodeProgress.current
       );
 
       if (explodeProgress.current > 0.01) {
@@ -116,7 +141,7 @@ const Polaroid: React.FC<PolaroidProps> = ({
 
         const baseQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(
             0, 
-            data.rotation[1] + Math.sin(time * 0.5 + data.position[0]) * 0.02 + explodeProgress.current * 5,
+            rotY + Math.sin(time * 0.5 + data.position[0]) * 0.02 + explodeProgress.current * 5,
             Math.sin(time + data.position[1]) * swayAmount + explodeProgress.current * 5
         ));
         groupRef.current.quaternion.slerpQuaternions(baseQuat, targetQuat, floatFactor);
@@ -124,7 +149,7 @@ const Polaroid: React.FC<PolaroidProps> = ({
         groupRef.current.position.copy(basePos);
         groupRef.current.rotation.set(
             0,
-            data.rotation[1] + Math.sin(time * 0.5 + data.position[0]) * 0.02,
+            rotY + Math.sin(time * 0.5 + data.position[0]) * 0.02,
             Math.sin(time + data.position[1]) * swayAmount
         );
       }
@@ -145,9 +170,14 @@ const Polaroid: React.FC<PolaroidProps> = ({
     if (interactionMode === InteractionMode.EDIT) {
         // Edit Mode: pick a replacement photo. The input is created on demand so it
         // works on touch screens, where there is no hover state to render it beforehand.
-        const input = getPhotoPicker();
+        const isPlaceholder = !data.url;
+        const input = getPhotoPicker(isPlaceholder);
         input.onchange = () => {
-          if (input.files && input.files[0]) onUpload(data.id, input.files[0]);
+          const files = input.files ? Array.from(input.files) : [];
+          if (files.length) {
+            if (isPlaceholder) onAddPhotos(files);
+            else onUpload(data.id, files[0]);
+          }
           input.value = '';
         };
         input.click();
@@ -163,9 +193,6 @@ const Polaroid: React.FC<PolaroidProps> = ({
   return (
     <group 
       ref={groupRef} 
-      position={data.position} 
-      rotation={[0, data.rotation[1], 0]} 
-      scale={[0.85, 0.85, 0.85]}
       onPointerOver={() => { 
           setHovered(true); 
           document.body.style.cursor = cursorStyle; 
