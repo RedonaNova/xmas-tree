@@ -1,0 +1,66 @@
+import { Vector3 } from 'three';
+
+// --- Colors ---
+export const COLORS = {
+  TREE_TOP: '#1cbd62',
+  TREE_BOTTOM: '#1FAA6A',
+  SPIRAL_LIGHT: '#fff1a1',
+  DECORATION_GOLD: '#f2e24e',
+  DECORATION_RED: '#ff421c',
+  BACKGROUND: '#050505',
+  POLAROID_FRAME: '#ffffff',
+  POLAROID_BACK: '#1a1a1a',
+  // New Additions
+  STAR: '#fff5b6',
+  STAR_GLOW: '#ffdd00',
+  PRESENTS: ['#D32F2F', '#388E3C', '#1976D2', '#7B1FA2', '#FBC02D', '#E64A19'], // Deep festive colors
+  RIBBON: '#F5F5F5',
+};
+
+// --- Dimensions & Geometry ---
+export const TREE_CONFIG = {
+  HEIGHT: 14, // Slightly taller for elegance
+  RADIUS_BOTTOM: 6,
+  PARTICLE_COUNT: 20000, // Significantly increased for maximum density
+  PARTICLE_SIZE: 0.3, // Increased size for more prominent shapes
+  COLLISION_RADIUS: 0.5, // Radius to prevent overlap with photos
+};
+
+export const SPIRAL_CONFIG = {
+  LOOPS: 5.5,
+  THICKNESS: 0.05,
+  RADIUS_OFFSET: 0.6,
+};
+
+export const CAMERA_CONFIG = {
+  FOV: 50,
+  DEFAULT_POS: new Vector3(0, 0, 32),
+  ZOOM_IN_POS: new Vector3(0, 0, 9), // Close up for details
+  LOOK_AT_OFFSET: new Vector3(0, -1, 0),
+  // Bounds for panning in Hand Mode
+  MIN_HEIGHT: -4,
+  MAX_HEIGHT: 5,
+};
+
+// --- Hand Gestures ---
+export const GESTURE_THRESHOLDS = {
+  PINCH_DISTANCE: 0.04,
+  SPREAD_DISTANCE: 0.25, 
+  FIST_DISTANCE: 0.5, // Stricter threshold for Zoom Out
+  SMOOTHING_FACTOR: 0.08, // Smoother camera
+  PAN_SENSITIVITY: 6.0,
+  SWIPE_THRESHOLD: 0.05, // Minimum horizontal movement for swipe
+  SWIPE_COOLDOWN: 500, // Lowered to 500ms for faster navigation
+};
+
+// --- Placeholders ---
+export const PLACEHOLDER_TYPES = {
+  SNOWFLAKE: 'snowflake',
+  BELL: 'bell',
+  TREE: 'tree',
+} as const;
+
+export const DEFAULT_PHOTOS_COUNT = 30;
+
+// Max edge (px) of photos placed on the tree. Keeps memory reasonable for big phone photos.
+export const MAX_PHOTO_SIZE = 1024;
