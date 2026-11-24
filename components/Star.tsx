@@ -3,23 +3,17 @@ import { useFrame } from '@react-three/fiber';
 import { Billboard, Sparkles } from '@react-three/drei';
 import * as THREE from 'three';
 import { COLORS, TREE_CONFIG } from '../constants';
+import { makeRadialGlowTexture } from '../utils/glowTexture';
+import { GLOW_ENABLED } from '../utils/renderQuality';
 
-const GlowTexture = () => {
-  const canvas = document.createElement('canvas');
-  canvas.width = 128;
-  canvas.height = 128;
-  const ctx = canvas.getContext('2d');
-  if (ctx) {
-    const gradient = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
-    gradient.addColorStop(0, 'rgba(255, 255, 200, 1)');
-    gradient.addColorStop(0.4, 'rgba(255, 220, 100, 0.3)');
-    gradient.addColorStop(0.7, 'rgba(255, 200, 0, 0.05)');
-    gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, 128, 128);
-  }
-  return new THREE.CanvasTexture(canvas);
-}
+// Computed pixel by pixel (not a canvas gradient) - see utils/glowTexture.ts for why
+const GlowTexture = () =>
+  makeRadialGlowTexture(256, [
+    [0, [255, 255, 200, 1]],
+    [0.4, [255, 220, 100, 0.3]],
+    [0.7, [255, 200, 0, 0.05]],
+    [1, [0, 0, 0, 0]],
+  ]);
 
 interface StarProps {
   isExploded?: boolean;
@@ -95,12 +89,12 @@ const Star: React.FC<StarProps> = ({ isExploded = false }) => {
     <group ref={groupRef} position={[0, startY, 0]}>
 
       {/* GLOW HALO */}
-      <Billboard follow={true} lockX={false} lockY={false} lockZ={false}>
+      {GLOW_ENABLED && <Billboard follow={true} lockX={false} lockY={false} lockZ={false}>
         <mesh scale={[16, 16, 1]}>
           <planeGeometry />
           <meshBasicMaterial map={glowTexture} transparent opacity={0.3} depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
         </mesh>
-      </Billboard>
+      </Billboard>}
 
       {/* The 3D Star Mesh */}
       <mesh geometry={starGeometry}>

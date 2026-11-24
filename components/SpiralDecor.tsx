@@ -4,25 +4,16 @@ import { useFrame } from '@react-three/fiber';
 import { COLORS, SPIRAL_CONFIG, TREE_CONFIG } from '../constants';
 import { getSpiralPoint } from '../utils/math';
 import { PhotoData } from '../types';
+import { makeRadialGlowTexture } from '../utils/glowTexture';
 
 // Generate a soft glow texture for the fluff particles
-const getFluffTexture = () => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 32;
-    canvas.height = 32;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-        // Soft radial glow
-        const gradient = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
-        gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
-        gradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.3)');
-        gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
-        ctx.fillStyle = gradient;
-        ctx.fillRect(0, 0, 32, 32);
-    }
-    const texture = new THREE.CanvasTexture(canvas);
-    return texture;
-}
+// (computed pixel by pixel, not a canvas gradient - see utils/glowTexture.ts)
+const getFluffTexture = () =>
+    makeRadialGlowTexture(32, [
+        [0, [255, 255, 255, 1]],
+        [0.5, [255, 255, 255, 0.3]],
+        [1, [0, 0, 0, 0]],
+    ]);
 
 interface SpiralDecorProps {
   isExploded?: boolean;

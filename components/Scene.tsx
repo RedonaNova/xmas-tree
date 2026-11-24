@@ -43,7 +43,7 @@ const SceneEffects: React.FC<{
 }> = () => {
   if (!EFFECTS.enabled) return null;
   return (
-    // iPhone/iPad: no MSAA + 8-bit buffers (see utils/renderQuality.ts)
+    // Defaults: MSAA x4, half-float buffers (overridable via URL, see utils/renderQuality.ts)
     <EffectComposer
       disableNormalPass
       multisampling={EFFECTS.multisampling}
