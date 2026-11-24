@@ -11,6 +11,7 @@ import Star from './Star';
 import Presents from './Presents';
 import Snow from './Snow';
 import { CAMERA_CONFIG, COLORS, GESTURE_THRESHOLDS } from '../constants';
+import { EFFECTS } from '../utils/renderQuality';
 import { PhotoData, ControlMode, ZoomLevel, InteractionMode } from '../types';
 
 interface SceneProps {
@@ -40,8 +41,14 @@ const SceneEffects: React.FC<{
   recordingType: 'FULL' | 'ALBUM' | null;
   photos: PhotoData[];
 }> = () => {
+  if (!EFFECTS.enabled) return null;
   return (
-    <EffectComposer disableNormalPass multisampling={4}>
+    // iPhone/iPad: no MSAA + 8-bit buffers (see utils/renderQuality.ts)
+    <EffectComposer
+      disableNormalPass
+      multisampling={EFFECTS.multisampling}
+      frameBufferType={EFFECTS.frameBufferType}
+    >
       <Bloom 
         intensity={0.5} 
         luminanceThreshold={0.9} 
