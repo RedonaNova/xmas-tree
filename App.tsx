@@ -38,21 +38,36 @@ const createPlaceholderPhotos = (): PhotoData[] => {
   }));
 };
 
-/** Puts the given image URLs into the photo slots, from the top of the tree down. */
-const fillSlotsTopDown = (current: PhotoData[], urls: string[]) => {
-  const next = [...current];
-  const order = next
-    .map((p, i) => ({ y: p.position[1], index: i }))
-    .sort((a, b) => b.y - a.y)
-    .map(item => item.index);
+/**
+ * Puts new image URLs into FREE slots only (placeholders, then spots where a photo was
+ * deleted), from the top of the tree down. Existing photos are never overwritten.
+ */
+const fillFreeSlots = (current: PhotoData[], urls: string[]) => {
+  const bySlot = new Map(current.map(p => [slotIndex(p), p]));
+  const all = createPlaceholderPhotos();
+  const free = all
+    .filter(p => !bySlot.get(slotIndex(p))?.url)
+    .sort((a, b) => b.position[1] - a.position[1]);
+
+  const added = new Map<number, string>();
+  urls.slice(0, free.length).forEach((url, k) => added.set(slotIndex(free[k]), url));
 
   let last: PhotoData | null = null;
-  urls.slice(0, order.length).forEach((url, k) => {
-    const index = order[k];
-    next[index] = { ...next[index], url };
-    last = next[index];
-  });
-  return { next, last: last as PhotoData | null };
+  const next: PhotoData[] = [];
+  for (const slot of all) {
+    const i = slotIndex(slot);
+    const existing = bySlot.get(i);
+    const url = added.get(i);
+    if (url) {
+      const photo = { ...(existing || slot), url };
+      next.push(photo);
+      last = photo;
+    } else if (existing) {
+      next.push(existing);
+    }
+    // deleted slot that got nothing stays deleted
+  }
+  return { next, last: last as PhotoData | null, skipped: Math.max(0, urls.length - free.length) };
 };
 
 /** Rebuilds the tree's photos from a saved tree (deleted slots stay deleted). */
@@ -79,6 +94,8 @@ const App: React.FC = () => {
   const [currentSlug, setCurrentSlug] = useState<string | null>(null);
   const [editToken, setEditTokenState] = useState<string | null>(null);
   const [isShareOpen, setIsShareOpen] = useState(false);
+  // Shared links open like a card: buttons hidden, only the eye button to bring them back
+  const [showUI, setShowUI] = useState(!INITIAL_SLUG);
   const [saveProgress, setSaveProgress] = useState('');
   const [toast, setToast] = useState<{ message: string; type: 'error' | 'success' } | null>(null);
 
@@ -130,6 +147,7 @@ const App: React.FC = () => {
         if (cancelled) return;
         console.error(err);
         setInteractionMode(InteractionMode.EDIT);
+        setShowUI(true);
         history.replaceState(null, '', '/');
         showToast(err?.status === 404
           ? `"${INITIAL_SLUG}" холбоостой мод олдсонгүй. Өөрийн модоо чимэглээд хуваалцаарай.`
@@ -300,8 +318,15 @@ const App: React.FC = () => {
   };
 
   const handleBulkUpload = async (files: FileList) => {
+    const freeCount = DEFAULT_PHOTOS_COUNT - photos.filter(p => p.url).length;
+    const chosen = Array.from(files);
+    if (freeCount <= 0) {
+      showToast(`Модон дээр ${DEFAULT_PHOTOS_COUNT} зураг дүүрсэн байна. Зураг солих бол "Засах" горимд зураг дээр дарна уу.`, 'error');
+      return;
+    }
+
     const urls: string[] = [];
-    for (const file of Array.from(files).slice(0, photos.length)) {
+    for (const file of chosen.slice(0, freeCount)) {
       const rawUrl = URL.createObjectURL(file);
       const url = await processImageWithPadding(rawUrl);
       if (url !== rawUrl) {
@@ -310,8 +335,11 @@ const App: React.FC = () => {
       urls.push(url);
     }
 
-    const { next, last } = fillSlotsTopDown(photos, urls);
+    const { next, last } = fillFreeSlots(photos, urls);
     setPhotos(next);
+    if (chosen.length > freeCount) {
+      showToast(`Сул байр ${freeCount} байсан тул эхний ${freeCount} зургийг нэмлээ.`, 'error');
+    }
 
     if (last) {
       // Switch to VIEW mode and focus
@@ -377,6 +405,8 @@ const App: React.FC = () => {
         setIsNameSet={setIsNameSet}
         onRecordVideo={handleRecordVideo}
         onOpenShare={() => setIsShareOpen(true)}
+        showUI={showUI}
+        setShowUI={setShowUI}
         isRecording={isRecording}
         isExploded={isExploded}
       />

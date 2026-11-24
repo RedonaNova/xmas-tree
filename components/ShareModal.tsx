@@ -167,7 +167,7 @@ const ShareModal: React.FC<ShareModalProps> = ({
                       value={name}
                       onChange={e => setName(e.target.value)}
                       maxLength={60}
-                      placeholder="Жишээ нь: Хулан"
+                      placeholder="Таны нэр"
                       className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-white/25 outline-none focus:border-[#1cbd62]"
                     />
                   </label>
@@ -195,7 +195,7 @@ const ShareModal: React.FC<ShareModalProps> = ({
                       value={name}
                       onChange={e => handleNameChange(e.target.value)}
                       maxLength={60}
-                      placeholder="Жишээ нь: Хулан"
+                      placeholder="Таны нэр"
                       className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-white/25 outline-none focus:border-[#1cbd62]"
                     />
                   </label>
@@ -210,7 +210,7 @@ const ShareModal: React.FC<ShareModalProps> = ({
                           setSlugEdited(true);
                         }}
                         maxLength={40}
-                        placeholder="khulan"
+                        placeholder="ara"
                         autoCapitalize="none"
                         autoCorrect="off"
                         spellCheck={false}

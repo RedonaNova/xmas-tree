@@ -21,6 +21,8 @@ interface OverlayProps {
   setIsNameSet: (set: boolean) => void;
   onRecordVideo: (type: 'FULL' | 'ALBUM') => void;
   onOpenShare: () => void;
+  showUI: boolean;
+  setShowUI: (show: boolean) => void;
   isRecording: boolean;
   isExploded?: boolean;
 }
@@ -57,6 +59,8 @@ const Overlay: React.FC<OverlayProps> = ({
   setIsNameSet,
   onRecordVideo,
   onOpenShare,
+  showUI,
+  setShowUI,
   isRecording,
   isExploded
 }) => {
@@ -147,12 +151,11 @@ const Overlay: React.FC<OverlayProps> = ({
     }
   };
 
-  const [showUI, setShowUI] = useState(true);
 
   // if (isRecording) return null; // Removed to keep title visible
 
   return (
-    <div id="overlay-container" className="absolute inset-0 pointer-events-none z-50 flex flex-col justify-between p-4 md:p-6 pb-[max(1rem,env(safe-area-inset-bottom))]">
+    <div id="overlay-container" className="absolute inset-0 pointer-events-none z-50 flex flex-col justify-between p-3 sm:p-4 md:p-6 pb-[max(1rem,env(safe-area-inset-bottom))]">
 
       {/* Top Header - Just the Title */}
       <div className="flex flex-col justify-center items-center w-full relative pt-2 md:pt-8 [@media(max-height:500px)]:pt-0 px-4">
@@ -314,7 +317,7 @@ const Overlay: React.FC<OverlayProps> = ({
 
       {/* Bottom Controls - Unified at the bottom */}
       {!isRecording && (
-        <div className="flex flex-col items-center gap-3 md:gap-4 w-full mb-4 md:mb-6 [@media(max-height:500px)]:mb-0 [@media(max-height:500px)]:scale-[0.72] [@media(max-height:500px)]:origin-bottom pointer-events-auto px-4">
+        <div className="flex flex-col items-center gap-3 md:gap-4 w-full mb-2 md:mb-6 [@media(max-height:500px)]:mb-0 [@media(max-height:500px)]:scale-[0.72] [@media(max-height:500px)]:origin-bottom pointer-events-auto px-0 md:px-4">
           {!showUI ? (
             /* Small Toggle to bring back UI */
             <button
@@ -329,11 +332,11 @@ const Overlay: React.FC<OverlayProps> = ({
             <div className="flex flex-col items-center gap-2 md:gap-3 w-full max-w-full">
 
               {/* Top Row: System & View Settings - Flexible layout */}
-              <div className="flex flex-wrap justify-center bg-white/10 backdrop-blur-md rounded-2xl md:rounded-full p-1 border border-white/20 shadow-2xl items-center gap-0.5 md:gap-2">
+              <div className="flex flex-wrap justify-center bg-white/10 backdrop-blur-md rounded-2xl sm:rounded-full p-1 border border-white/20 shadow-2xl items-center gap-0.5 md:gap-2">
                 {/* Music Control */}
                 <button
                   onClick={toggleMusic}
-                  className="flex items-center justify-center w-8 h-8 md:w-10 md:h-10 rounded-full text-white hover:bg-white/10 transition-all"
+                  className="flex items-center justify-center w-7 sm:w-8 h-8 md:w-10 md:h-10 rounded-full text-white hover:bg-white/10 transition-all"
                   title={isMusicPlaying ? "Хөгжим зогсоох" : "Хөгжим тоглуулах"}
                 >
                   {isMusicPlaying ? <Music className="w-3.5 h-3.5 md:w-4 md:h-4" /> : <VolumeX className="w-3.5 h-3.5 md:w-4 md:h-4" />}
@@ -342,10 +345,10 @@ const Overlay: React.FC<OverlayProps> = ({
                 <div className="hidden md:block w-px h-4 bg-white/10 mx-1"></div>
 
                 {/* Input Control Toggle */}
-                <div className="flex bg-white/5 rounded-full p-0.5 scale-90 md:scale-100">
+                <div className="flex shrink-0 bg-white/5 rounded-full p-0.5">
                   <button
                     onClick={() => setControlMode(ControlMode.MOUSE)}
-                    className={`flex items-center gap-1 md:gap-2 px-2.5 md:px-4 py-1 md:py-1.5 rounded-full transition-all ${controlMode === ControlMode.MOUSE ? 'bg-white text-black shadow-lg' : 'text-white hover:bg-white/10'
+                    className={`flex items-center gap-1 md:gap-2 px-2 md:px-4 py-1.5 rounded-full transition-all ${controlMode === ControlMode.MOUSE ? 'bg-white text-black shadow-lg' : 'text-white hover:bg-white/10'
                       }`}
                   >
                     <Mouse className="w-3 h-3 md:w-3.5 md:h-3.5" />
@@ -353,7 +356,7 @@ const Overlay: React.FC<OverlayProps> = ({
                   </button>
                   <button
                     onClick={() => setControlMode(ControlMode.HAND)}
-                    className={`flex items-center gap-1 md:gap-2 px-2.5 md:px-4 py-1 md:py-1.5 rounded-full transition-all ${controlMode === ControlMode.HAND ? 'bg-[#1cbd62] text-white shadow-lg' : 'text-white hover:bg-white/10'
+                    className={`flex items-center gap-1 md:gap-2 px-2 md:px-4 py-1.5 rounded-full transition-all ${controlMode === ControlMode.HAND ? 'bg-[#1cbd62] text-white shadow-lg' : 'text-white hover:bg-white/10'
                       }`}
                   >
                     <Hand className="w-3 h-3 md:w-3.5 md:h-3.5" />
@@ -364,10 +367,10 @@ const Overlay: React.FC<OverlayProps> = ({
                 <div className="hidden md:block w-px h-4 bg-white/10 mx-1"></div>
 
                 {/* Interaction Mode Toggle */}
-                <div className="flex bg-white/5 rounded-full p-0.5 scale-90 md:scale-100">
+                <div className="flex shrink-0 bg-white/5 rounded-full p-0.5">
                   <button
                     onClick={() => setInteractionMode(InteractionMode.VIEW)}
-                    className={`flex items-center gap-1 md:gap-2 px-2.5 md:px-4 py-1 md:py-1.5 rounded-full transition-all ${interactionMode === InteractionMode.VIEW ? 'bg-[#f2e24e] text-black shadow-lg' : 'text-white hover:bg-white/10'
+                    className={`flex items-center gap-1 md:gap-2 px-2 md:px-4 py-1.5 rounded-full transition-all ${interactionMode === InteractionMode.VIEW ? 'bg-[#f2e24e] text-black shadow-lg' : 'text-white hover:bg-white/10'
                       }`}
                   >
                     <Eye className="w-3 h-3 md:w-3.5 md:h-3.5" />
@@ -375,7 +378,7 @@ const Overlay: React.FC<OverlayProps> = ({
                   </button>
                   <button
                     onClick={() => setInteractionMode(InteractionMode.EDIT)}
-                    className={`flex items-center gap-1 md:gap-2 px-2.5 md:px-4 py-1 md:py-1.5 rounded-full transition-all ${interactionMode === InteractionMode.EDIT ? 'bg-[#ff421c] text-white shadow-lg' : 'text-white hover:bg-white/10'
+                    className={`flex items-center gap-1 md:gap-2 px-2 md:px-4 py-1.5 rounded-full transition-all ${interactionMode === InteractionMode.EDIT ? 'bg-[#ff421c] text-white shadow-lg' : 'text-white hover:bg-white/10'
                       }`}
                   >
                     <Edit3 className="w-3 h-3 md:w-3.5 md:h-3.5" />
@@ -387,10 +390,10 @@ const Overlay: React.FC<OverlayProps> = ({
 
                 {/* Window Controls */}
                 <div className="flex gap-0.5 md:gap-1">
-                  {canFullscreen && (
+                  {canFullscreen && !isMobile && (
                     <button
                       onClick={toggleFullscreen}
-                      className="flex items-center justify-center w-8 h-8 md:w-10 md:h-10 rounded-full text-white hover:bg-white/10 transition-all"
+                      className="hidden lg:flex items-center justify-center w-8 h-8 md:w-10 md:h-10 rounded-full text-white hover:bg-white/10 transition-all"
                       title="Бүтэн дэлгэц"
                     >
                       <Maximize className="w-3.5 h-3.5 md:w-4 md:h-4" />
@@ -398,7 +401,7 @@ const Overlay: React.FC<OverlayProps> = ({
                   )}
                   <button
                     onClick={() => setShowUI(false)}
-                    className="flex items-center justify-center w-8 h-8 md:w-10 md:h-10 rounded-full text-white hover:bg-white/10 transition-all"
+                    className="flex items-center justify-center w-7 sm:w-8 h-8 md:w-10 md:h-10 rounded-full text-white hover:bg-white/10 transition-all"
                     title="Товчнуудыг нуух"
                   >
                     <EyeOff className="w-3.5 h-3.5 md:w-4 md:h-4" />
