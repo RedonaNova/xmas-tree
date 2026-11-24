@@ -22,6 +22,7 @@ interface SceneProps {
   interactionMode: InteractionMode;
   zoomLevel: ZoomLevel;
   panOffset: React.MutableRefObject<{ x: number, y: number }>;
+  viewResetKey?: number;
   focusedPhoto: PhotoData | null;
   isExploded?: boolean;
   isRecording?: boolean;
@@ -55,11 +56,12 @@ const CameraController: React.FC<{
   zoomLevel: ZoomLevel;
   controlMode: ControlMode;
   panOffset: React.MutableRefObject<{ x: number, y: number }>;
+  viewResetKey: number;
   focusedPhoto: PhotoData | null;
   isRecording: boolean;
   recordingType: 'FULL' | 'ALBUM' | null;
   photos: PhotoData[];
-}> = ({ zoomLevel, controlMode, panOffset, focusedPhoto, isRecording, recordingType, photos }) => {
+}> = ({ zoomLevel, controlMode, panOffset, viewResetKey, focusedPhoto, isRecording, recordingType, photos }) => {
   const { camera, controls } = useThree();
   const targetPos = useRef(CAMERA_CONFIG.DEFAULT_POS.clone());
   const lookAtTarget = useRef(CAMERA_CONFIG.LOOK_AT_OFFSET.clone());
@@ -128,7 +130,7 @@ const CameraController: React.FC<{
       currentCamState.current.radius = Math.sqrt(relX * relX + relZ * relZ);
       currentCamState.current.height = camera.position.y;
     }
-  }, [zoomLevel, controlMode, focusedPhoto, isRecording]);
+  }, [zoomLevel, controlMode, focusedPhoto, isRecording, viewResetKey]);
 
   useFrame((state, delta) => {
     // 0. RECORDING LOGIC
@@ -311,11 +313,19 @@ const CameraController: React.FC<{
 
   return (
     <OrbitControls
-      enabled={controlMode === ControlMode.MOUSE}
+      enabled={controlMode === ControlMode.MOUSE && !isRecording}
       enableZoom={true}
       enablePan={controlMode === ControlMode.MOUSE}
-      minDistance={2}
-      maxDistance={100}
+      enableDamping
+      dampingFactor={0.08}
+      // Touch: 1 finger = rotate, 2 fingers = pinch zoom + move
+      touches={{ ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN }}
+      screenSpacePanning
+      // On the full tree, stop at the branches instead of zooming inside the tree
+      minDistance={zoomLevel === ZoomLevel.ZOOMED_IN ? 2 : 11}
+      maxDistance={60}
+      // Let the user take over immediately instead of fighting a running camera animation
+      onStart={() => { isAnimating.current = false; }}
       makeDefault
     />
   );
@@ -387,6 +397,7 @@ const Scene: React.FC<SceneProps> = ({
   interactionMode,
   zoomLevel,
   panOffset,
+  viewResetKey = 0,
   focusedPhoto,
   isExploded = false,
   isRecording = false,
@@ -405,13 +416,14 @@ const Scene: React.FC<SceneProps> = ({
         preserveDrawingBuffer: true, 
         powerPreference: 'high-performance',
       }}
-      style={{ background: COLORS.BACKGROUND, position: 'relative', zIndex: 0 }}
+      style={{ background: COLORS.BACKGROUND, position: 'relative', zIndex: 0, touchAction: 'none' }}
     >
       <color attach="background" args={[COLORS.BACKGROUND]} />
       <CameraController
         zoomLevel={zoomLevel}
         controlMode={controlMode}
         panOffset={panOffset}
+        viewResetKey={viewResetKey}
         focusedPhoto={focusedPhoto}
         isRecording={isRecording}
         recordingType={recordingType}

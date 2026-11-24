@@ -13,6 +13,8 @@ export const useTreeInteraction = ({ photos, interactionMode, isRecording }: Use
     const [focusedPhoto, setFocusedPhoto] = useState<PhotoData | null>(null);
     const [isExploded, setIsExploded] = useState(false);
     const panOffset = useRef({ x: 0, y: 0 });
+    // Bumped to animate the camera back to the default view
+    const [viewResetKey, setViewResetKey] = useState(0);
 
     const handlePhotoClick = useCallback((photo: PhotoData) => {
         // View Mode: Zoom In to Photo
@@ -90,6 +92,8 @@ export const useTreeInteraction = ({ photos, interactionMode, isRecording }: Use
         // This logic was mainly for double click zoom reset
         if (zoomLevel === ZoomLevel.ZOOMED_IN) {
             setZoomLevel(ZoomLevel.FULL_TREE);
+        } else {
+            setViewResetKey(k => k + 1);
         }
     };
 
@@ -100,6 +104,7 @@ export const useTreeInteraction = ({ photos, interactionMode, isRecording }: Use
         setFocusedPhoto,
         isExploded,
         panOffset,
+        viewResetKey,
         handleGesture,
         handlePhotoClick,
         handleNextPhoto,

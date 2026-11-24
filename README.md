@@ -1,97 +1,56 @@
 # 🎄 Christmas Tree
 
-Interactive 3D Christmas tree decorated with photos. UI is in Mongolian.
+Interactive 3D Christmas tree decorated with photos. UI is in Mongolian. Works on desktop and phones.
 
 Based on [gracetyy/christmas-tree](https://github.com/gracetyy/christmas-tree) (MIT, see `LICENSE`).
 
-## Routes
+## How it works
 
 | URL | What it does |
 | --- | --- |
-| `/` | Empty tree. Visitors add their own photos (opens in **Засах** / Edit mode). Nothing is saved. |
-| `/<album>` e.g. `/khulan` | Tree pre-filled from the server folder `albums/<album>/`, opens in **Харах** / View mode. Visitors can still switch to Edit and change photos locally (not saved). |
+| `/` | Empty tree. Visitors add their own photos (opens in **Засах** / Edit mode). |
+| `/<link>` e.g. `/khulan` | A saved tree, opens in **Харах** / View mode. |
 
-Unknown albums fall back to the empty tree with a notice.
+- **Хуваалцах** (Share) saves the tree: photos are uploaded, a link is created from the name
+  (Mongolian is transliterated: Хулан → `/khulan`, Өлзий → `/ulzii`). The link can be edited;
+  if it is taken, a free one is suggested (`/khulan-3f2a`).
+- The person who saved a tree can update it later from the same browser, or from anywhere with
+  the private **edit link** (`/khulan#edit=...`) shown after saving. Everyone else who changes a
+  saved tree can only save it as a new link.
+- Touch screens: 1 finger rotates, pinch zooms, 2 fingers move, double tap resets the view.
 
-## Albums
+## Storage
 
-```
-albums/
-  khulan/
-    01.jpg            # any .jpg .jpeg .png .webp .gif .avif
-    02.jpg            # sorted by filename, filled top of tree -> bottom
-    ...
-    album.json        # optional: { "name": "Хулан" } -> "Merry Christmas Хулан!"
-```
-
-- Up to 30 photos are used (the number of slots on the tree).
-- Folder names: letters, digits, `-`, `_` only.
-- Photos are scaled to 1024px in the browser, but uploading pre-shrunk photos (~1500px) makes the page load faster.
-- Adding/removing photos takes effect immediately, no rebuild or restart needed.
+- **MySQL** (`DATABASE_URL`): table `trees` (slug, name, slots JSON, hashed edit token). Created automatically on start.
+- **Disk** (`DATA_DIR/images`): uploaded photos, JPEG ≤ 1024 px, named by SHA-256 (identical photos are stored once).
 
 ## Development
 
 ```bash
 npm install
-npm run dev        # http://localhost:3000, serves ./albums too
+cp .env.example .env     # set DATABASE_URL
+npm run build && npm start   # http://localhost:8080
+# or, for hot reload: `npm start` in one terminal and `npm run dev` (port 3000) in another
 ```
 
-## Production (VPS)
+## Deploy (VPS)
 
-Requires Node 18+. No runtime dependencies besides Node itself.
+The app runs under pm2 as `surprise` from `~/apps/xmas-tree`, behind nginx (`surprise.radnaabazar.com` → `127.0.0.1:8080`).
 
 ```bash
+cd ~/apps/xmas-tree
+git pull
 npm ci
 npm run build
-PORT=8080 ALBUMS_DIR=/srv/xmas/albums npm start
+pm2 restart surprise
 ```
 
-`server/index.js` serves `dist/`, `/api/albums/<name>`, `/albums/<name>/<file>`, and falls back to `index.html` for app routes.
+`.env` on the server (not in git):
 
-### systemd
-
-`/etc/systemd/system/xmas.service`:
-
-```ini
-[Unit]
-Description=Christmas tree
-After=network.target
-
-[Service]
-WorkingDirectory=/srv/xmas/app
-ExecStart=/usr/bin/node server/index.js
-Environment=PORT=8080
-Environment=ALBUMS_DIR=/srv/xmas/albums
-Restart=always
-User=www-data
-
-[Install]
-WantedBy=multi-user.target
+```
+PORT=8080
+DATABASE_URL=mysql://appuser:<password>@127.0.0.1:3306/surprise
+DATA_DIR=/home/cloudmn/apps/xmas-tree-data
 ```
 
-```bash
-sudo systemctl daemon-reload && sudo systemctl enable --now xmas
-```
-
-### nginx (HTTPS via certbot)
-
-```nginx
-server {
-    server_name xmas.example.com;
-
-    location / {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
-
-HTTPS is required for hand-gesture mode (camera access).
-
-### Uploading an album
-
-```bash
-scp -r ./khulan user@vps:/srv/xmas/albums/
-```
+Back up both the `surprise` database and `DATA_DIR`.

@@ -25,6 +25,6 @@ dist-ssr
 
 .env
 .env.local
-# Album photos live on the server (ALBUMS_DIR), not in git
-albums/
+# Uploaded images live on the server (DATA_DIR), not in git
+data/
 .playwright-mcp

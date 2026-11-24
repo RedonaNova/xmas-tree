@@ -1,27 +1,22 @@
 import path from 'path';
-import { defineConfig, Plugin } from 'vite';
+import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-// @ts-ignore - plain JS module shared with the production server
-import { albumsMiddleware } from './server/albums.js';
 
-// Serve /api/albums/* and /albums/* from ./albums during `npm run dev` too.
-const albumsDevPlugin = (): Plugin => ({
-  name: 'albums-dev',
-  configureServer(server) {
-    server.middlewares.use(albumsMiddleware());
-  },
-  configurePreviewServer(server) {
-    server.middlewares.use(albumsMiddleware());
-  },
-});
+// In development, run the API server too (`npm start` with a DATABASE_URL);
+// /api and /images are proxied to it.
+const API_TARGET = process.env.API_TARGET || 'http://localhost:8080';
 
 export default defineConfig({
   base: '/',
   server: {
     port: 3000,
     host: '0.0.0.0',
+    proxy: {
+      '/api': API_TARGET,
+      '/images': API_TARGET,
+    },
   },
-  plugins: [react(), albumsDevPlugin()],
+  plugins: [react()],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, '.'),

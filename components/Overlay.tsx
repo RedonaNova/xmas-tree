@@ -1,6 +1,6 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ControlMode, ZoomLevel, InteractionMode } from '../types';
-import { Mouse, Hand, ImagePlus, Music, VolumeX, Eye, EyeOff, Edit3, Download, Maximize, Move, ChevronLeft, ChevronRight, Video } from 'lucide-react';
+import { Mouse, Hand, ImagePlus, Music, VolumeX, Eye, EyeOff, Edit3, Download, Maximize, Move, ChevronLeft, ChevronRight, Video, Share2 } from 'lucide-react';
 
 interface OverlayProps {
   controlMode: ControlMode;
@@ -20,6 +20,7 @@ interface OverlayProps {
   isNameSet: boolean;
   setIsNameSet: (set: boolean) => void;
   onRecordVideo: (type: 'FULL' | 'ALBUM') => void;
+  onOpenShare: () => void;
   isRecording: boolean;
   isExploded?: boolean;
 }
@@ -55,11 +56,22 @@ const Overlay: React.FC<OverlayProps> = ({
   isNameSet,
   setIsNameSet,
   onRecordVideo,
+  onOpenShare,
   isRecording,
   isExploded
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  const isTouch = isMobile || window.matchMedia?.('(pointer: coarse)').matches;
+  const canFullscreen = typeof document.documentElement.requestFullscreen === 'function';
+  const [videoMenuOpen, setVideoMenuOpen] = useState(false);
+  const [showTouchHint, setShowTouchHint] = useState(isTouch);
+
+  useEffect(() => {
+    if (!showTouchHint) return;
+    const t = setTimeout(() => setShowTouchHint(false), 8000);
+    return () => clearTimeout(t);
+  }, [showTouchHint]);
 
   const triggerBulkUpload = () => {
     fileInputRef.current?.click();
@@ -140,12 +152,12 @@ const Overlay: React.FC<OverlayProps> = ({
   // if (isRecording) return null; // Removed to keep title visible
 
   return (
-    <div id="overlay-container" className="absolute inset-0 pointer-events-none z-50 flex flex-col justify-between p-4 md:p-6">
+    <div id="overlay-container" className="absolute inset-0 pointer-events-none z-50 flex flex-col justify-between p-4 md:p-6 pb-[max(1rem,env(safe-area-inset-bottom))]">
 
       {/* Top Header - Just the Title */}
-      <div className="flex flex-col justify-center items-center w-full relative pt-2 md:pt-8 px-4">
+      <div className="flex flex-col justify-center items-center w-full relative pt-2 md:pt-8 [@media(max-height:500px)]:pt-0 px-4">
         <div className="pointer-events-auto text-center">
-          <h1 className="text-3xl md:text-6xl text-[#fff1a1] leading-tight" style={{ fontFamily: GREETING_FONT, textShadow: '0 0 20px rgba(255, 241, 161, 0.5)' }}>
+          <h1 className="text-3xl md:text-6xl [@media(max-height:500px)]:text-3xl text-[#fff1a1] leading-tight" style={{ fontFamily: GREETING_FONT, textShadow: '0 0 20px rgba(255, 241, 161, 0.5)' }}>
             {userName ? (
               <>
                 Merry Christmas{' '}
@@ -184,8 +196,21 @@ const Overlay: React.FC<OverlayProps> = ({
         )}
       </div>
 
+      {/* Touch gesture hint (phones/tablets, finger mode) */}
+      {!isRecording && showUI && showTouchHint && controlMode === ControlMode.MOUSE && (
+        <div className="absolute left-1/2 -translate-x-1/2 top-[38%] [@media(max-height:500px)]:top-[18%] [@media(max-height:500px)]:scale-[0.8] origin-top pointer-events-auto z-20 w-max max-w-[calc(100%-2rem)]" onClick={() => setShowTouchHint(false)}>
+          <div className="bg-black/55 backdrop-blur-md rounded-2xl border border-white/10 px-4 py-3 text-white/85 text-xs shadow-2xl space-y-1.5">
+            <div>☝️ <b className="font-semibold">Нэг хуруугаар чирэх</b> — эргүүлэх</div>
+            <div>🤏 <b className="font-semibold">Хоёр хуруугаар чимхэх</b> — ойртуулах / холдуулах</div>
+            <div>✌️ <b className="font-semibold">Хоёр хуруугаар чирэх</b> — зөөх</div>
+            <div>👆👆 <b className="font-semibold">Хоёр товших</b> — анхны байрлал</div>
+            <div>👆 <b className="font-semibold">Зураг дээр дарах</b> — {interactionMode === InteractionMode.EDIT ? 'зураг солих' : 'томруулж харах'}</div>
+          </div>
+        </div>
+      )}
+
       {/* Instructions Pane - Responsive positioning */}
-      <div className="absolute top-1/4 right-4 md:top-1/2 md:right-8 transform md:-translate-y-1/2 pointer-events-none transition-all duration-500 z-20">
+      <div className="absolute top-1/4 right-4 md:top-1/2 md:right-8 transform md:-translate-y-1/2 [@media(max-height:500px)]:scale-75 [@media(max-height:500px)]:origin-right pointer-events-none transition-all duration-500 z-20">
         {!isRecording && showUI && controlMode === ControlMode.HAND && (
           <div className="bg-white/5 backdrop-blur-3xl p-3 md:p-6 rounded-[1.5rem] md:rounded-[2.5rem] border border-white/10 text-white/90 w-40 md:w-64 shadow-[0_8px_32px_0_rgba(0,0,0,0.3)] flex flex-col gap-2 md:gap-4 animate-in fade-in slide-in-from-right-4 duration-700">
             <div className="flex items-center gap-2 md:gap-3 border-b border-white/10 pb-2 md:pb-3">
@@ -289,7 +314,7 @@ const Overlay: React.FC<OverlayProps> = ({
 
       {/* Bottom Controls - Unified at the bottom */}
       {!isRecording && (
-        <div className="flex flex-col items-center gap-3 md:gap-4 w-full mb-4 md:mb-6 pointer-events-auto px-4">
+        <div className="flex flex-col items-center gap-3 md:gap-4 w-full mb-4 md:mb-6 [@media(max-height:500px)]:mb-0 [@media(max-height:500px)]:scale-[0.72] [@media(max-height:500px)]:origin-bottom pointer-events-auto px-4">
           {!showUI ? (
             /* Small Toggle to bring back UI */
             <button
@@ -324,7 +349,7 @@ const Overlay: React.FC<OverlayProps> = ({
                       }`}
                   >
                     <Mouse className="w-3 h-3 md:w-3.5 md:h-3.5" />
-                    <span className="text-[9px] md:text-xs font-medium">{isMobile ? 'Хуруу' : 'Хулгана'}</span>
+                    <span className="text-[11px] md:text-xs font-medium">{isMobile ? 'Хуруу' : 'Хулгана'}</span>
                   </button>
                   <button
                     onClick={() => setControlMode(ControlMode.HAND)}
@@ -332,7 +357,7 @@ const Overlay: React.FC<OverlayProps> = ({
                       }`}
                   >
                     <Hand className="w-3 h-3 md:w-3.5 md:h-3.5" />
-                    <span className="text-[9px] md:text-xs font-medium">Гар</span>
+                    <span className="text-[11px] md:text-xs font-medium">Гар</span>
                   </button>
                 </div>
 
@@ -346,7 +371,7 @@ const Overlay: React.FC<OverlayProps> = ({
                       }`}
                   >
                     <Eye className="w-3 h-3 md:w-3.5 md:h-3.5" />
-                    <span className="text-[9px] md:text-xs font-medium">Харах</span>
+                    <span className="text-[11px] md:text-xs font-medium">Харах</span>
                   </button>
                   <button
                     onClick={() => setInteractionMode(InteractionMode.EDIT)}
@@ -354,7 +379,7 @@ const Overlay: React.FC<OverlayProps> = ({
                       }`}
                   >
                     <Edit3 className="w-3 h-3 md:w-3.5 md:h-3.5" />
-                    <span className="text-[9px] md:text-xs font-medium">Засах</span>
+                    <span className="text-[11px] md:text-xs font-medium">Засах</span>
                   </button>
                 </div>
 
@@ -362,13 +387,15 @@ const Overlay: React.FC<OverlayProps> = ({
 
                 {/* Window Controls */}
                 <div className="flex gap-0.5 md:gap-1">
-                  <button
-                    onClick={toggleFullscreen}
-                    className="flex items-center justify-center w-8 h-8 md:w-10 md:h-10 rounded-full text-white hover:bg-white/10 transition-all"
-                    title="Бүтэн дэлгэц"
-                  >
-                    <Maximize className="w-3.5 h-3.5 md:w-4 md:h-4" />
-                  </button>
+                  {canFullscreen && (
+                    <button
+                      onClick={toggleFullscreen}
+                      className="flex items-center justify-center w-8 h-8 md:w-10 md:h-10 rounded-full text-white hover:bg-white/10 transition-all"
+                      title="Бүтэн дэлгэц"
+                    >
+                      <Maximize className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                    </button>
+                  )}
                   <button
                     onClick={() => setShowUI(false)}
                     className="flex items-center justify-center w-8 h-8 md:w-10 md:h-10 rounded-full text-white hover:bg-white/10 transition-all"
@@ -396,7 +423,7 @@ const Overlay: React.FC<OverlayProps> = ({
                       onClick={() => setZoomLevel(ZoomLevel.FULL_TREE)}
                       className="flex items-center px-2 md:px-5 py-1.5 md:py-2 rounded-full transition-all text-white hover:bg-white/10 whitespace-nowrap"
                     >
-                      <span className="text-[9px] md:text-sm font-medium text-[#fff1a1]">
+                      <span className="text-[11px] md:text-sm font-medium text-[#fff1a1]">
                         <span className="md:hidden">Буцах</span>
                         <span className="hidden md:inline">Мод руу буцах</span>
                       </span>
@@ -418,7 +445,7 @@ const Overlay: React.FC<OverlayProps> = ({
                   className="flex items-center gap-1 md:gap-2 px-2.5 md:px-5 py-1.5 md:py-2 rounded-full transition-all text-white hover:bg-white/10"
                 >
                   <ImagePlus className="w-3.5 h-3.5 md:w-4 md:h-4 text-[#f2e24e]" />
-                  <span className="text-[9px] md:text-sm font-medium whitespace-nowrap text-white/90">
+                  <span className="text-[11px] md:text-sm font-medium whitespace-nowrap text-white/90">
                     <span className="md:hidden">Нэмэх</span>
                     <span className="hidden md:inline">Зураг нэмэх</span>
                   </span>
@@ -430,27 +457,28 @@ const Overlay: React.FC<OverlayProps> = ({
                 {/* Video Download Dropdown */}
                 <div className="relative group">
                   <button
+                    onClick={() => setVideoMenuOpen(o => !o)}
                     className={`flex items-center gap-1 md:gap-2 px-2.5 md:px-5 py-1.5 md:py-2 rounded-full transition-all text-white bg-white/5 hover:bg-white/10 ${isRecording ? 'animate-pulse bg-red-500/20' : ''}`}
                     title="Бичлэг татах"
                   >
                     <Video className={`w-3.5 h-3.5 md:w-4 md:h-4 ${isRecording ? 'text-red-500' : 'text-[#3b82f6]'}`} />
-                    <span className="text-[9px] md:text-sm font-medium whitespace-nowrap text-white/90">
+                    <span className="text-[11px] md:text-sm font-medium whitespace-nowrap text-white/90">
                       {isRecording ? 'Бичиж байна...' : 'Бичлэг'}
                     </span>
                   </button>
 
                   {/* Dropdown Menu */}
                   {!isRecording && (
-                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 w-40 md:w-56 bg-black/95 backdrop-blur-2xl border border-white/20 rounded-2xl overflow-hidden opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[100] shadow-[0_10px_40px_rgba(0,0,0,0.8)]">
+                    <div className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-3 w-40 md:w-56 bg-black/95 backdrop-blur-2xl border border-white/20 rounded-2xl overflow-hidden ${videoMenuOpen ? 'opacity-100 visible' : 'opacity-0 invisible'} md:group-hover:opacity-100 md:group-hover:visible transition-all z-[100] shadow-[0_10px_40px_rgba(0,0,0,0.8)]`}>
                       <button
-                        onClick={() => onRecordVideo('FULL')}
+                        onClick={() => { setVideoMenuOpen(false); onRecordVideo('FULL'); }}
                         className="w-full text-left px-4 md:px-5 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-white hover:bg-white/20 transition-colors border-b border-white/10 flex items-center gap-2 md:gap-3"
                       >
                         <div className="w-1.5 h-1.5 md:w-2 md:h-2 rounded-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.8)]" />
                         360° эргэлт
                       </button>
                       <button
-                        onClick={() => onRecordVideo('ALBUM')}
+                        onClick={() => { setVideoMenuOpen(false); onRecordVideo('ALBUM'); }}
                         className="w-full text-left px-4 md:px-5 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-white hover:bg-white/20 transition-colors flex items-center gap-2 md:gap-3"
                       >
                         <div className="w-2 h-2 rounded-full bg-purple-500 shadow-[0_0_10px_rgba(168,85,247,0.8)]" />
@@ -469,7 +497,17 @@ const Overlay: React.FC<OverlayProps> = ({
                   title="Модны зургийг татах"
                 >
                   <Download className="w-3.5 h-3.5 md:w-4 md:h-4 text-[#1cbd62]" />
-                  <span className="text-[9px] md:text-sm font-medium whitespace-nowrap text-white/90">Зураг татах</span>
+                  <span className="text-[11px] md:text-sm font-medium whitespace-nowrap text-white/90">Зураг татах</span>
+                </button>
+
+                {/* Save & Share */}
+                <button
+                  onClick={onOpenShare}
+                  className="flex items-center gap-1 md:gap-2 px-3 md:px-5 py-1.5 md:py-2 ml-0.5 rounded-full transition-all text-white bg-[#1cbd62] hover:bg-[#1faa6a] shadow-[0_0_20px_rgba(28,189,98,0.35)]"
+                  title="Хадгалаад холбоосоор хуваалцах"
+                >
+                  <Share2 className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                  <span className="text-[11px] md:text-sm font-semibold whitespace-nowrap">Хуваалцах</span>
                 </button>
 
                 <input
@@ -478,7 +516,10 @@ const Overlay: React.FC<OverlayProps> = ({
                   ref={fileInputRef}
                   className="hidden"
                   accept="image/*"
-                  onChange={(e) => e.target.files && onBulkUpload(e.target.files)}
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files.length) onBulkUpload(e.target.files);
+                    e.target.value = '';
+                  }}
                 />
 
               </div>

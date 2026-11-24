@@ -20,6 +20,19 @@ interface PolaroidProps {
 
 const tempScale = new THREE.Vector3();
 
+// One shared, attached (but hidden) file input. iOS Safari is unreliable with detached inputs.
+let photoPicker: HTMLInputElement | null = null;
+const getPhotoPicker = () => {
+  if (!photoPicker) {
+    photoPicker = document.createElement('input');
+    photoPicker.type = 'file';
+    photoPicker.accept = 'image/*';
+    photoPicker.style.display = 'none';
+    document.body.appendChild(photoPicker);
+  }
+  return photoPicker;
+};
+
 const Polaroid: React.FC<PolaroidProps> = ({ 
   data, 
   onUpload, 
@@ -33,7 +46,6 @@ const Polaroid: React.FC<PolaroidProps> = ({
   const groupRef = useRef<THREE.Group>(null);
   const explodeProgress = useRef(0);
   const [hovered, setHovered] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const explodeDir = useMemo(() => {
     return new THREE.Vector3(data.position[0], data.position[1], data.position[2]).normalize().multiplyScalar(15 + Math.random() * 10);
@@ -127,21 +139,21 @@ const Polaroid: React.FC<PolaroidProps> = ({
 
   const handleClick = (e: any) => {
     e.stopPropagation();
-    
+    // Ignore the "click" at the end of a drag (rotating the tree by touch/mouse)
+    if (e.delta > 10) return;
+
     if (interactionMode === InteractionMode.EDIT) {
-        // Edit Mode: Trigger Upload
-        if (fileInputRef.current) {
-            fileInputRef.current.click();
-        }
+        // Edit Mode: pick a replacement photo. The input is created on demand so it
+        // works on touch screens, where there is no hover state to render it beforehand.
+        const input = getPhotoPicker();
+        input.onchange = () => {
+          if (input.files && input.files[0]) onUpload(data.id, input.files[0]);
+          input.value = '';
+        };
+        input.click();
     } else {
         // View Mode: Zoom to this photo
         onPhotoClick(data);
-    }
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      onUpload(data.id, e.target.files[0]);
     }
   };
 
@@ -213,18 +225,10 @@ const Polaroid: React.FC<PolaroidProps> = ({
         </mesh>
       </group>
       
-      {/* Interaction UI (Hidden Input & Delete Button) - Only render when needed for performance */}
-      {(hovered || (interactionMode === InteractionMode.EDIT && isZoomedIn)) && (
+      {/* Delete button (Edit mode) - Only render when needed for performance */}
+      {interactionMode === InteractionMode.EDIT && (hovered || isZoomedIn) && (
         <Html position={[0.5, -1.4, 0.1]} transform style={{ opacity: hovered ? 1 : 0, transition: 'opacity 0.2s', pointerEvents: hovered ? 'auto' : 'none' }}>
           <div className="flex gap-2" onPointerDown={(e) => e.stopPropagation()}>
-              <input 
-                type="file" 
-                ref={fileInputRef} 
-                style={{ display: 'none' }} 
-                accept="image/*" 
-                onChange={handleFileChange}
-              />
-              
               {interactionMode === InteractionMode.EDIT && (
                    <button
                       onClick={(e) => {

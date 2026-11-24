@@ -8,13 +8,24 @@ import { DEFAULT_PHOTOS_COUNT, PLACEHOLDER_TYPES } from './constants';
 import { useAudio } from './hooks/useAudio';
 import { useRecording } from './hooks/useRecording';
 import { useTreeInteraction } from './hooks/useTreeInteraction';
-import { getAlbumSlug, useAlbum } from './hooks/useAlbum';
 import { processImageWithPadding } from './utils/image';
+import {
+  fetchTree, createTree, updateTree, uploadPhoto, imageUrl,
+  getEditToken, setEditToken, consumeEditLinkToken, SavedTree, TreeSlot
+} from './utils/api';
+import ShareModal, { SaveResult } from './components/ShareModal';
 import { AlertCircle, CheckCircle2, Loader2, X } from 'lucide-react';
 
 // "/" -> empty tree, visitors decorate it themselves (Edit mode).
-// "/<slug>" -> pre-made album from the server, opened in View mode.
-const ALBUM_SLUG = getAlbumSlug();
+// "/<slug>" -> saved tree from the server, opened in View mode.
+const getSlugFromPath = (): string => {
+  const segment = window.location.pathname.split('/').filter(Boolean)[0] || '';
+  return /^[a-z0-9-]{1,40}$/.test(segment) ? segment : '';
+};
+const INITIAL_SLUG = getSlugFromPath();
+consumeEditLinkToken(INITIAL_SLUG);
+
+const slotIndex = (photo: PhotoData) => Number(photo.id.replace('photo-', ''));
 
 const createPlaceholderPhotos = (): PhotoData[] => {
   const types = Object.values(PLACEHOLDER_TYPES);
@@ -44,16 +55,31 @@ const fillSlotsTopDown = (current: PhotoData[], urls: string[]) => {
   return { next, last: last as PhotoData | null };
 };
 
+/** Rebuilds the tree's photos from a saved tree (deleted slots stay deleted). */
+const photosFromSavedTree = (tree: SavedTree): PhotoData[] => {
+  const bySlot = new Map(tree.slots.map(s => [s.i, s.img]));
+  return createPlaceholderPhotos()
+    .filter(p => bySlot.has(slotIndex(p)))
+    .map(p => {
+      const img = bySlot.get(slotIndex(p));
+      return img ? { ...p, url: imageUrl(img) } : p;
+    });
+};
+
 const App: React.FC = () => {
   const [controlMode, setControlMode] = useState<ControlMode>(ControlMode.MOUSE);
   const [interactionMode, setInteractionMode] = useState<InteractionMode>(
-    ALBUM_SLUG ? InteractionMode.VIEW : InteractionMode.EDIT
+    INITIAL_SLUG ? InteractionMode.VIEW : InteractionMode.EDIT
   );
   const [photos, setPhotos] = useState<PhotoData[]>(createPlaceholderPhotos);
   const [userName, setUserName] = useState('');
   const [isNameSet, setIsNameSet] = useState(false);
   const [isHandReady, setIsHandReady] = useState(false);
-  const [isAlbumLoading, setIsAlbumLoading] = useState(!!ALBUM_SLUG);
+  const [isTreeLoading, setIsTreeLoading] = useState(!!INITIAL_SLUG);
+  const [currentSlug, setCurrentSlug] = useState<string | null>(null);
+  const [editToken, setEditTokenState] = useState<string | null>(null);
+  const [isShareOpen, setIsShareOpen] = useState(false);
+  const [saveProgress, setSaveProgress] = useState('');
   const [toast, setToast] = useState<{ message: string; type: 'error' | 'success' } | null>(null);
 
   const showToast = useCallback((message: string, type: 'error' | 'success' = 'error') => {
@@ -64,7 +90,6 @@ const App: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   // Custom Hooks
-  const { status: albumStatus, album } = useAlbum(ALBUM_SLUG);
   const { isMusicPlaying, toggleMusic, audioRef } = useAudio();
   const { isRecording, recordingType, handleRecordVideo } = useRecording(photos, (msg) => showToast(msg, 'error'));
 
@@ -75,6 +100,7 @@ const App: React.FC = () => {
     setFocusedPhoto,
     isExploded,
     panOffset,
+    viewResetKey,
     handleGesture,
     handlePhotoClick,
     handleNextPhoto,
@@ -86,32 +112,99 @@ const App: React.FC = () => {
     isRecording
   });
 
-  // Populate the tree from a pre-made album (/khulan etc.)
+  // Load a saved tree (/khulan etc.)
   useEffect(() => {
-    if (albumStatus === 'missing') {
-      setIsAlbumLoading(false);
-      setInteractionMode(InteractionMode.EDIT);
-      showToast(`"${ALBUM_SLUG}" нэртэй цомог олдсонгүй. Өөрийн зургуудаар модоо чимэглээрэй.`, 'error');
-      return;
-    }
-    if (albumStatus !== 'ready' || !album) return;
-
+    if (!INITIAL_SLUG) return;
     let cancelled = false;
-    if (album.name) {
-      setUserName(album.name);
-    }
-    setIsNameSet(true);
 
-    Promise.all(album.photos.map(url => processImageWithPadding(url))).then(urls => {
-      if (cancelled) return;
-      setPhotos(prev => fillSlotsTopDown(prev, urls).next);
-      setIsAlbumLoading(false);
-    });
+    fetchTree(INITIAL_SLUG)
+      .then(tree => {
+        if (cancelled) return;
+        setPhotos(photosFromSavedTree(tree));
+        setUserName(tree.name);
+        setIsNameSet(true);
+        setCurrentSlug(tree.slug);
+        setEditTokenState(getEditToken(tree.slug));
+      })
+      .catch(err => {
+        if (cancelled) return;
+        console.error(err);
+        setInteractionMode(InteractionMode.EDIT);
+        history.replaceState(null, '', '/');
+        showToast(err?.status === 404
+          ? `"${INITIAL_SLUG}" холбоостой мод олдсонгүй. Өөрийн модоо чимэглээд хуваалцаарай.`
+          : 'Модыг ачаалж чадсангүй. Интернэтээ шалгаад дахин оролдоно уу.', 'error');
+      })
+      .finally(() => {
+        if (!cancelled) setIsTreeLoading(false);
+      });
 
     return () => {
       cancelled = true;
     };
-  }, [albumStatus, album, showToast]);
+  }, [showToast]);
+
+  // Edit link pasted into an already-open tab only changes the #hash (no reload)
+  useEffect(() => {
+    const onHashChange = () => {
+      if (!currentSlug) return;
+      consumeEditLinkToken(currentSlug);
+      setEditTokenState(getEditToken(currentSlug));
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, [currentSlug]);
+
+  const handleSave = async ({ name, slug, mode }: { name: string; slug: string; mode: 'create' | 'update' }): Promise<SaveResult> => {
+    const withImages = photos.filter(p => p.url);
+    const slots: TreeSlot[] = [];
+    let done = 0;
+    setSaveProgress(`Зураг илгээж байна 0/${withImages.length}`);
+
+    // Upload a few photos at a time
+    const queue = [...photos];
+    const worker = async () => {
+      while (queue.length) {
+        const photo = queue.shift()!;
+        if (!photo.url) {
+          slots.push({ i: slotIndex(photo), img: null });
+          continue;
+        }
+        const img = await uploadPhoto(photo.url);
+        slots.push({ i: slotIndex(photo), img });
+        done++;
+        setSaveProgress(`Зураг илгээж байна ${done}/${withImages.length}`);
+      }
+    };
+    try {
+      await Promise.all([worker(), worker(), worker()]);
+      setSaveProgress('Хадгалж байна...');
+
+      let result: SaveResult;
+      if (mode === 'update' && currentSlug && editToken) {
+        await updateTree(currentSlug, editToken, { name, slots });
+        result = { slug: currentSlug, editToken };
+      } else {
+        const created = await createTree({ name, slug, slots });
+        setEditToken(created.slug, created.editToken);
+        result = { slug: created.slug, editToken: created.editToken };
+      }
+
+      // Show stored images from now on, and put the link in the address bar
+      setPhotos(prev => prev.map(p => {
+        const slot = slots.find(s => s.i === slotIndex(p));
+        return slot?.img ? { ...p, url: imageUrl(slot.img) } : p;
+      }));
+      setCurrentSlug(result.slug);
+      setEditTokenState(result.editToken);
+      setUserName(name);
+      setIsNameSet(true);
+      history.replaceState(null, '', `/${result.slug}`);
+      return result;
+    } finally {
+      setSaveProgress('');
+    }
+  };
 
   // Request Camera permissions when switching to hand mode
   useEffect(() => {
@@ -148,14 +241,42 @@ const App: React.FC = () => {
     };
   }, [controlMode]);
 
+  const isUiTarget = (target: EventTarget | null) =>
+    !!(target as HTMLElement | null)?.closest?.('button, input, a, [role="dialog"]');
+
   const handleDoubleClick = (e: React.MouseEvent) => {
     // Prevent zooming out when interacting with UI
-    const target = e.target as HTMLElement;
-    if (target.closest('button') || target.closest('input')) {
-      return;
-    }
-
+    if (isUiTarget(e.target)) return;
+    // Already handled as a touch double tap (Android also fires dblclick)
+    if (Date.now() - lastDoubleTap.current < 600) return;
     scrollToTop();
+  };
+
+  // Double tap on touch screens (iOS Safari does not fire dblclick reliably):
+  // back to the tree from a photo, or reset the view on the full tree.
+  const tapStart = useRef({ t: 0, x: 0, y: 0 });
+  const lastTap = useRef({ t: 0, x: 0, y: 0 });
+  const lastDoubleTap = useRef(0);
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (e.pointerType !== 'touch') return;
+    tapStart.current = { t: Date.now(), x: e.clientX, y: e.clientY };
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    if (e.pointerType !== 'touch' || isUiTarget(e.target)) return;
+    const now = Date.now();
+    const s = tapStart.current;
+    const isTap = now - s.t < 300 && Math.hypot(e.clientX - s.x, e.clientY - s.y) < 10;
+    if (!isTap) return;
+    const prev = lastTap.current;
+    if (now - prev.t < 350 && Math.hypot(e.clientX - prev.x, e.clientY - prev.y) < 40) {
+      lastDoubleTap.current = now;
+      lastTap.current = { t: 0, x: 0, y: 0 };
+      scrollToTop();
+    } else {
+      lastTap.current = { t: now, x: e.clientX, y: e.clientY };
+    }
   };
 
   const handleSingleUpload = async (id: string, file: File) => {
@@ -210,6 +331,8 @@ const App: React.FC = () => {
     <div
       className="relative w-full h-full bg-[#050505]"
       onDoubleClick={handleDoubleClick}
+      onPointerDown={handlePointerDown}
+      onPointerUp={handlePointerUp}
     >
       <audio
         ref={audioRef}
@@ -227,6 +350,7 @@ const App: React.FC = () => {
         interactionMode={interactionMode}
         zoomLevel={zoomLevel}
         panOffset={panOffset}
+        viewResetKey={viewResetKey}
         focusedPhoto={focusedPhoto}
         isExploded={isExploded}
         isRecording={isRecording}
@@ -252,6 +376,7 @@ const App: React.FC = () => {
         isNameSet={isNameSet}
         setIsNameSet={setIsNameSet}
         onRecordVideo={handleRecordVideo}
+        onOpenShare={() => setIsShareOpen(true)}
         isRecording={isRecording}
         isExploded={isExploded}
       />
@@ -264,11 +389,22 @@ const App: React.FC = () => {
         videoRef={videoRef}
       />
 
-      {isAlbumLoading && (
+      <ShareModal
+        isOpen={isShareOpen}
+        onClose={() => setIsShareOpen(false)}
+        initialName={userName}
+        currentSlug={currentSlug}
+        canUpdate={!!editToken}
+        photoCount={photos.filter(p => p.url).length}
+        progress={saveProgress}
+        onSave={handleSave}
+      />
+
+      {isTreeLoading && (
         <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[60] pointer-events-none">
           <div className="flex items-center gap-3 bg-black/60 backdrop-blur-md rounded-full px-5 py-2.5 border border-white/10 text-white/80 text-sm shadow-2xl">
             <Loader2 className="w-4 h-4 animate-spin text-[#fff1a1]" />
-            Зургуудыг ачаалж байна...
+            Модыг ачаалж байна...
           </div>
         </div>
       )}
